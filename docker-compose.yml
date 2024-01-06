@@ -1,0 +1,11 @@
+version: "3"
+
+# Config file for compose, a tool that allows for easily managing multiple docker containers.
+# https://docs.docker.com/compose/
+
+services:
+    rcc:
+        build: .
+        ports:
+            - 64989:64989
+        restart: unless-stopped
