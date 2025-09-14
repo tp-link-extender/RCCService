@@ -1,0 +1,200 @@
+-- Avatar v1.1.0
+-- This is the thumbnail script for R6 avatars. Straight up and down, with the right arm out if they have a gear.
+
+-- Services
+local ThumbnailGenerator = game:GetService "ThumbnailGenerator"
+local HttpService = game:GetService "HttpService"
+local ContentProvider = game:GetService "ContentProvider"
+local InsertService = game:GetService "InsertService"
+
+-- Variables
+local BaseUrl = "http://localhost:5173"
+local ThumbnailKey = "password" --DO NOT SHARE! People can upload custom thumbnails if this gets leaked!
+local Player = game.Players:CreateLocalPlayer(0)
+
+-- Functions
+pcall(function()
+	ContentProvider:SetBaseUrl(BaseUrl)
+	InsertService:SetAssetUrl(BaseUrl .. "/asset?id=%d")
+end)
+game:GetService("ScriptContext").ScriptsDisabled = true
+--game:GetService("RunService"):Run()
+HttpService.HttpEnabled = true
+
+local function setPing()
+	coroutine.resume(coroutine.create(function()
+		while true do
+			game:HttpGet(BaseUrl .. "/api/render/ping?apiKey=" .. ThumbnailKey)
+			wait(30)
+		end
+	end))
+end
+
+local function render(Keys)
+	local Type = Keys[3]
+	local Id = Keys[2]
+	local JobID = Keys[1]
+
+	print("Rendering " .. Type .. " ID " .. Id .. " (Job ID " .. JobID .. ")")
+	game:HttpPost(
+		BaseUrl
+			.. "/api/render/update?ApiKey="
+			.. ThumbnailKey
+			.. "&JobID="
+			.. JobID,
+		'{"Status": 1}',
+		false,
+		"text/plain",
+		true
+	)
+
+	if Player.Character then
+		Player.Character:Destroy()
+	end
+	local RenderObjets = workspace:FindFirstChild "RenderObjects"
+	if RenderObjets then
+		RenderObjets:Destroy()
+	end
+
+	wait()
+
+	if Type == "Avatar" then
+		Player.CharacterAppearance = BaseUrl
+			.. "/Asset/CharacterFetch.ashx?userId="
+			.. Id
+			.. "&serverId=-1"
+		Player:LoadCharacter(false)
+
+		local gear = game.Players.LocalPlayer.Backpack:GetChildren()[1]
+		if gear then
+			gear.Parent = game.Players.LocalPlayer.Character
+			game.Players.LocalPlayer.Character.Torso["Right Shoulder"].CurrentAngle = math.pi
+				/ 2
+			wait(2)
+		end
+
+		wait(3)
+
+		return ThumbnailGenerator:Click("PNG", 1680, 1680, true)
+	end
+
+	if Type == "Clothing" then
+		Player.CharacterAppearance = BaseUrl
+			.. "/api/render/characterasset?id="
+			.. Id
+		Player:LoadCharacter(false)
+
+		wait(3)
+
+		return ThumbnailGenerator:Click("PNG", 1680, 1680, true)
+	end
+
+	if Type == "Model" or Type == "UserModel" then
+		local temporaryModel = Instance.new "Model"
+		temporaryModel.Name = "RenderObjects"
+		temporaryModel.Parent = workspace
+
+		InsertService:LoadAsset(Id).Parent = temporaryModel
+
+		wait(5)
+
+		return ThumbnailGenerator:Click("PNG", 1680, 1680, true)
+	end
+
+	if Type == "Mesh" then
+		local temporaryModel = Instance.new "Model"
+		temporaryModel.Name = "RenderObjects"
+		temporaryModel.Parent = workspace
+
+		local meshPart = Instance.new "Part"
+		meshPart.Size = Vector3.new(1.5, 1.5, 1.5)
+		meshPart.Parent = temporaryModel
+
+		local mesh = Instance.new "SpecialMesh"
+		mesh.MeshType = "FileMesh"
+		mesh.MeshId = BaseUrl .. "/asset?id=" .. Id
+		mesh.Parent = meshPart
+
+		wait(3)
+
+		return ThumbnailGenerator:Click("PNG", 1680, 1680, true)
+	end
+
+	if Type == "Head" then
+		Player.CharacterAppearance = BaseUrl
+			.. "/api/render/characterasset?id="
+			.. Id
+		Player:LoadCharacter(false)
+
+		wait(0.2)
+
+		for _, BodyPart in ipairs(Player.Character:GetChildren()) do
+			if BodyPart.className == "Part" and BodyPart.Name ~= "Head" then
+				BodyPart:Remove()
+			end
+		end
+
+		wait(3)
+
+		return ThumbnailGenerator:Click("PNG", 1680, 1680, true)
+	end
+
+	return false
+end
+
+local function start()
+	setPing()
+
+	-- while true do
+	-- 	print ""
+	-- 	warn "Fetching render queue..."
+	-- 	local RenderQueueString = game:HttpGet(
+	-- 		BaseUrl .. "/api/render/queue?ApiKey=" .. ThumbnailKey,
+	-- 		true
+	-- 	)
+	-- 	local RenderQueue = {}
+	-- 	for Queue in RenderQueueString:gmatch "[^;%s]+" do
+	-- 		table.insert(RenderQueue, 1, Queue)
+	-- 	end
+
+	-- 	print("The render queue is " .. #RenderQueue .. " items long.")
+
+	-- 	if #RenderQueue == 0 then
+	-- 		print "Hibernating for 5 seconds."
+	-- 		wait(5)
+	-- 	else
+	-- 		for _, Queue in ipairs(RenderQueue) do
+	-- 			local Keys = {}
+	-- 			for Key in Queue:gmatch "[^:%s]+" do
+	-- 				table.insert(Keys, 1, Key)
+	-- 			end
+
+	-- 			local result
+	-- 			local renderBase64 = render(Keys)
+	-- 			if renderBase64 then
+	-- 				result = '{"Status": 2, "Message": "'
+	-- 					.. tostring(renderBase64)
+	-- 					.. '"}'
+	-- 				print "RENDER SUCCESS: Successfully rendered, moving on..."
+	-- 			else
+	-- 				result =
+	-- 					'{"Status": 3, "Message": "Error Code 16: Dumb Nigga Detected"}'
+	-- 				warn "RENDER FAIL: Failed to render this object!"
+	-- 			end
+
+	-- 			game:HttpPost(
+	-- 				BaseUrl
+	-- 					.. "/api/render/update?ApiKey="
+	-- 					.. ThumbnailKey
+	-- 					.. "&JobID="
+	-- 					.. Keys[1],
+	-- 				result,
+	-- 				false,
+	-- 				"text/plain",
+	-- 				true
+	-- 			)
+	-- 			-- game:HttpPost("https://pizzaboxer.xyz/render/upload?ApiKey=" .. ThumbnailKey .. "&JobID=" .. Keys[1], result, false, "text/plain", true)
+	-- 		end
+	-- 	end
+	-- end
+end
