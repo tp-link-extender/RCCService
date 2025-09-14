@@ -1,5 +1,3 @@
-version: "3"
-
 # Config file for compose, a tool that allows for easily managing multiple docker containers.
 # https://docs.docker.com/compose/
 
