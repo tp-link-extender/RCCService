@@ -11,14 +11,18 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"embed"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -27,8 +31,6 @@ import (
 	"github.com/disintegration/imaging"
 	env "github.com/joho/godotenv"
 )
-
-const executable = "./RCCService/RCCService.exe"
 
 var (
 	_      embed.FS // force embed import hack
@@ -47,21 +49,37 @@ func Logr(txt string) {
 	fmt.Print("\r", time.Now().Format("2006/01/02, 15:04:05  "), txt) // fmt.Print don't add spaces between args
 }
 
+var cmd *exec.Cmd
+
 func Assert(err error, txt string) {
 	// so that I don't have to write this every time
 	// todo: should only be used for fatal errors
 	if err != nil {
 		fmt.Println(err)
 		Log(c.InRed(txt))
+		if cmd != nil && cmd.Process != nil && cmd.Process.Pid != 0 {
+			Log(c.InRed("Killing RCCService..."))
+			cmd.Process.Kill()
+		}
 		os.Exit(1)
 	}
 }
 
 func StartRCC() {
-	_, err := os.Stat(executable)
+	_, err := os.Stat("./RCCService/RCCService.exe")
 	Assert(err, "RCCService.exe not found! Please place the RCCService folder in the current directory.")
 	for {
-		exec.Command(executable, "-Console").Run()
+		if runtime.GOOS == "windows" {
+			cmd = exec.Command("./RCCService/RCCService.exe", "-Console")
+		} else { // lel
+			cmd = exec.Command("wine", "./RCCService/RCCService.exe", "-Console")
+			// cmd.Env = append(cmd.Env, "DISPLAY=:0")
+			// cmd.Env = append(cmd.Env, "WINEPREFIX=/home/heliodex/prefix32")
+			// cmd.Env = append(cmd.Env, "WINEARCH=win32")
+		}
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
 		Log(c.InRed("RCCService has stopped. Restarting..."))
 	}
 }
@@ -74,9 +92,11 @@ func TestRCCStarted(loaded *bool, t int) {
 	}
 }
 
-func Compress(b64 string, resolution int, name string, compressed *string) {
+func Compress(b64 string, resolution int, name string, compressed *bytes.Buffer) {
+	// Log("Base64 is of length " + fmt.Sprint(len(b64)) + " for " + name)
 	data, err := base64.StdEncoding.DecodeString(b64)
 	Assert(err, "Failed to decode base64 of image")
+	// Log("Decoded base64 is of length " + fmt.Sprint(len(data)))
 
 	srcimg, err := imaging.Decode(strings.NewReader(string(data)))
 	Assert(err, "Failed to decode image from data")
@@ -85,15 +105,14 @@ func Compress(b64 string, resolution int, name string, compressed *string) {
 	img := imaging.Resize(srcimg, resolution, resolution, imaging.Lanczos)
 	Assert(err, "Failed to create image from data")
 
-	writer := new(strings.Builder)
-	imaging.Encode(writer, img, imaging.PNG)
-
-	*compressed = base64.StdEncoding.EncodeToString([]byte(writer.String()))
+	imaging.Encode(compressed, img, imaging.PNG)
+	// Log("Compressed image is of length " + fmt.Sprint(compressed.Len()))
 
 	wg.Done()
 }
 
 func idRoute(w http.ResponseWriter, r *http.Request) {
+	Log(c.InBlue("Received render request"))
 	// remove port from IP (can't just split by ":" because of IPv6)
 	if ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]; ip != os.Getenv("IP") && ip != "[::1]" {
 		Log(c.InRed("IP " + ip + " is not allowed! (render)"))
@@ -117,15 +136,26 @@ func idRoute(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("SOAPAction", "http://roblox.com/OpenJobEx")
 
 	Log(c.InBlue("Sending request to render " + id))
-	client.Do(req)
+	res, err := client.Do(req)
+	Assert(err, "Failed to send request to RCCService")
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	Assert(err, "Failed to read response from RCCService")
+	fmt.Println(string(body))
+
+	Log(c.InGreen("Render " + id + " started"))
 
 	w.WriteHeader(http.StatusOK)
 }
 
 func pingIdRoute(w http.ResponseWriter, r *http.Request) {
+	Log(c.InBlue("Received ping callback"))
 	// remove port from IP (can't just split by ":" because of IPv6)
-	if ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]; ip != "[::1]" {
-		Log(c.InRed("IP " + ip + " is not allowed! (ping)"))
+	ips := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
+	ips = strings.Trim(ips, "[]") // remove brackets from IPv6
+	if ip := net.ParseIP(ips); !net.IPv6loopback.Equal(ip) && !net.IPv4(127, 0, 0, 1).Equal(ip) {
+		Log(c.InRed("IP " + ips + " is not allowed! (ping)"))
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -147,7 +177,9 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 	data := strings.Split(string(readBody), "\n")
 	status := data[0]
 
-	var compressed []string
+	var encoded bytes.Buffer
+	encoded.WriteString(status)
+	encoded.WriteByte('\n')
 
 	switch status {
 	case "Rendering":
@@ -157,28 +189,25 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 		wg.Add(num)
 
 		// Could result in a random order if appending to an array instead
-		var body, head string
+		var body, head bytes.Buffer
 		go Compress(data[1], 420, "body", &body)
 		if num == 2 {
 			go Compress(data[2], 150, "head", &head)
 		}
 		wg.Wait()
 
-		compressed = []string{body}
-		if num == 2 {
-			compressed = append(compressed, head)
-		}
+		binary.Write(&encoded, binary.BigEndian, uint32(body.Len()))
+		binary.Write(&encoded, binary.BigEndian, uint32(head.Len()))
+		encoded.Write(body.Bytes())
+		encoded.Write(head.Bytes())
 
 		Log(c.InGreen("Render " + id + " is complete"))
 	}
 
-	compressed = append([]string{status}, compressed...)
-
-	// Send to server as base64
-	// todo make it multipart/form-data or something for lower bandwidth
+	// Send to server as binary
 	endpoint := fmt.Sprintf("%s/%s?apiKey=%s", os.Getenv("ENDPOINT"), id, apiKey)
 	// We (still) have to lie about the contentType to avoid being nuked by CORS from the website
-	_, err = http.Post(endpoint, "text/json", strings.NewReader(strings.Join(compressed, "\n")))
+	_, err = http.Post(endpoint, "text/json", &encoded)
 	Assert(err, "Failed to send render data to server")
 
 	w.WriteHeader(http.StatusOK)
