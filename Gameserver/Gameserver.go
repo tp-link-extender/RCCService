@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"time"
 )
 
 type Gameserver struct {
 	*exec.Cmd
+	StartTime time.Time
 }
 
 func CreateGameserver() (*Gameserver, error) {
@@ -24,19 +26,50 @@ func CreateGameserver() (*Gameserver, error) {
 	}
 
 	return &Gameserver{
-		Cmd: cmd,
+		Cmd:       cmd,
+		StartTime: time.Now(),
 	}, nil
 }
 
-func startRoute(w http.ResponseWriter, r *http.Request) {
+type Gameservers struct {
+	servers map[string]*Gameserver
+}
+
+func NewGameservers() *Gameservers {
+	return &Gameservers{
+		servers: make(map[string]*Gameserver),
+	}
+}
+
+func (g *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	fmt.Println("Received start request for ID:", id)
+
+	if _, exists := g.servers[id]; exists {
+		http.Error(w, "Gameserver already running for this ID", http.StatusConflict)
+		return
+	}
+
+	server, err := CreateGameserver()
+	if err != nil {
+		http.Error(w, "Failed to start gameserver: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	g.servers[id] = server
+	fmt.Println("Started gameserver for ID:", id)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Gameserver started"))
 }
 
 func main() {
 	fmt.Println("SUP world")
 
-	http.HandleFunc("POST /start/{id}", startRoute)
+	gameservers := &Gameservers{
+		servers: make(map[string]*Gameserver),
+	}
+
+	http.HandleFunc("POST /start/{id}", gameservers.startRoute)
 
 	fmt.Println("Gameserver is up on port 64991")
 	if err := http.ListenAndServe(":64991", nil); err != nil {
