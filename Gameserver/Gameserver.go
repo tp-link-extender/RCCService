@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"time"
+	"strconv"
 )
 
 type Gameserver struct {
@@ -13,14 +14,14 @@ type Gameserver struct {
 	StartTime time.Time
 }
 
-func CreateGameserver() (*Gameserver, error) {
-	const path = "./staging/MercuryStudioBeta.exe"
+func CreateGameserver(id int) (*Gameserver, error) {
+	const path = `./staging/MercuryStudioBeta.exe`
 	_, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("error stating MercuryStudioBeta.exe: %w", err)
+		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
 
-	cmd := exec.Command(path, "-console")
+	cmd := exec.Command(path, "-fileLocation", `C:\Users\alfee\Documents\GitHub\RCCService\Gameserver\places\1.rbxl`, "-script", "http://xtcy.dev/game/host?ticket=l5wty9tmqk5hj2cairef")
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
@@ -32,17 +33,22 @@ func CreateGameserver() (*Gameserver, error) {
 }
 
 type Gameservers struct {
-	servers map[string]*Gameserver
+	servers map[int]*Gameserver
 }
 
 func NewGameservers() *Gameservers {
 	return &Gameservers{
-		servers: make(map[string]*Gameserver),
+		servers: make(map[int]*Gameserver),
 	}
 }
 
 func (g *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
 	fmt.Println("Received start request for ID:", id)
 
 	if _, exists := g.servers[id]; exists {
@@ -50,7 +56,7 @@ func (g *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	server, err := CreateGameserver()
+	server, err := CreateGameserver(id)
 	if err != nil {
 		http.Error(w, "Failed to start gameserver: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -65,9 +71,7 @@ func (g *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 func main() {
 	fmt.Println("SUP world")
 
-	gameservers := &Gameservers{
-		servers: make(map[string]*Gameserver),
-	}
+	gameservers := NewGameservers()
 
 	http.HandleFunc("POST /start/{id}", gameservers.startRoute)
 

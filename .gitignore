@@ -1,6 +1,10 @@
 Proxy/.env
 Proxy/Proxy
 Proxy/Proxy.exe
+Gameserver/Gameserver
+Gameserver/Gameserver.exe
+Gameserver/places
+Gameserver/staging
 .env
 RCCProxy
 RCCProxy.exe
