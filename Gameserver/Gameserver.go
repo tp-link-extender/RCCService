@@ -14,14 +14,14 @@ type Gameserver struct {
 	StartTime time.Time
 }
 
-func CreateGameserver(id int) (*Gameserver, error) {
+func NewGameserver(id int) (*Gameserver, error) {
 	const path = `./staging/MercuryStudioBeta.exe`
 	_, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
 
-	cmd := exec.Command(path, "-fileLocation", `C:\Users\alfee\Documents\GitHub\RCCService\Gameserver\places\1.rbxl`, "-script", "http://xtcy.dev/game/host?ticket=l5wty9tmqk5hj2cairef")
+	cmd := exec.Command(path, "-fileLocation", `C:\Users\alfee\Documents\GitHub\RCCService\Gameserver\places\` + strconv.Itoa(id) + `.rbxl`, "-script", "http://xtcy.dev/game/host?ticket=l5wty9tmqk5hj2cairef")
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
@@ -30,6 +30,10 @@ func CreateGameserver(id int) (*Gameserver, error) {
 		Cmd:       cmd,
 		StartTime: time.Now(),
 	}, nil
+}
+
+func (g *Gameserver) StopGameserver() error {
+	return g.Process.Kill()
 }
 
 type Gameservers struct {
@@ -56,7 +60,7 @@ func (g *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	server, err := CreateGameserver(id)
+	server, err := NewGameserver(id)
 	if err != nil {
 		http.Error(w, "Failed to start gameserver: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -68,12 +72,36 @@ func (g *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Gameserver started"))
 }
 
+func (g *Gameservers) closeRoute (w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+	}
+
+	fmt.Println("Received close request for ID:", id)
+
+	server, exists := g.servers[id]
+
+	if !exists {
+		http.Error(w, "Gameserver not running for this ID", http.StatusNotFound)
+		return
+	}
+
+	server.StopGameserver()
+
+	fmt.Println("Stopped gameserver for ID: ", id)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Gameserver stopped"))
+}
+	
+
 func main() {
 	fmt.Println("SUP world")
 
 	gameservers := NewGameservers()
 
 	http.HandleFunc("POST /start/{id}", gameservers.startRoute)
+	http.HandleFunc("POST /close/{id}", gameservers.closeRoute)
 
 	fmt.Println("Gameserver is up on port 64991")
 	if err := http.ListenAndServe(":64991", nil); err != nil {
