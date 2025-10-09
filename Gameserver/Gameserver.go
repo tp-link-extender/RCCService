@@ -10,9 +10,13 @@ import (
 	"time"
 )
 
+type GameserverInfo struct {
+	StartTime int64 `json:"startTime"`
+}
+
 type Gameserver struct {
+	GameserverInfo
 	*exec.Cmd
-	StartTime time.Time
 }
 
 func NewGameserver(id int) (*Gameserver, error) {
@@ -28,8 +32,10 @@ func NewGameserver(id int) (*Gameserver, error) {
 	}
 
 	return &Gameserver{
-		Cmd:       cmd,
-		StartTime: time.Now(),
+		GameserverInfo: GameserverInfo{
+			StartTime: time.Now().UnixMilli(),
+		},
+		Cmd: cmd,
 	}, nil
 }
 
@@ -50,7 +56,12 @@ func NewGameservers() *Gameservers {
 func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Received list request")
 
-	if err := json.NewEncoder(w).Encode(gs.servers); err != nil {
+	serverInfo := make([][2]any, 0, len(gs.servers))
+	for id, server := range gs.servers {
+		serverInfo = append(serverInfo, [2]any{id, server.GameserverInfo})
+	}
+
+	if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
 		http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
