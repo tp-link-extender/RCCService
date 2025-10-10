@@ -29,7 +29,7 @@ import (
 	"time"
 
 	c "github.com/TwiN/go-color"
-	"github.com/disintegration/imaging"
+	"github.com/disintegration/imaging" // todo: review fork https://github.com/kovidgoyal/imaging
 	env "github.com/joho/godotenv"
 )
 
@@ -96,19 +96,19 @@ func Compress(b64 string, resolution int, name string, compressed *bytes.Buffer)
 	// Log("Base64 is of length " + fmt.Sprint(len(b64)) + " for " + name)
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
-		return fmt.Errorf("Failed to decode base64 of image: %w", err)
+		return fmt.Errorf("failed to decode base64 of image: %w", err)
 	}
 	// Log("Decoded base64 is of length " + fmt.Sprint(len(data)))
 
 	srcimg, err := imaging.Decode(strings.NewReader(string(data)))
 	if err != nil {
-		return fmt.Errorf("Failed to decode image from data: %w", err)
+		return fmt.Errorf("failed to decode image from data: %w", err)
 	}
 
 	// Lanczos my beloved 💖 (change it to something faster idc)
 	img := imaging.Resize(srcimg, resolution, resolution, imaging.Lanczos)
 	if img == nil {
-		return errors.New("Failed to create image from data")
+		return errors.New("failed to create image from data")
 	}
 
 	// Log("Compressed image is of length " + fmt.Sprint(compressed.Len()))
@@ -284,5 +284,8 @@ func main() {
 
 	Log(c.InGreen("~ RCCService proxy is up on port 64990 ~"))
 	Log(c.InGreen("Send a POST request to /{your task id} with the render script as the body to start a render"))
-	http.ListenAndServe(":64990", nil)
+	if err := http.ListenAndServe(":64990", nil); err != nil {
+		Log(c.InRed("Failed to start RCCService proxy on port 64990: " + err.Error()))
+		os.Exit(1)
+	}
 }

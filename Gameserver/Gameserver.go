@@ -8,9 +8,17 @@ import (
 	"os/exec"
 	"strconv"
 	"time"
+
+	c "github.com/TwiN/go-color"
 )
 
+func Log(txt string) {
+	// Hey, Go date formatting isn't so bad
+	fmt.Println(time.Now().Format("2006/01/02, 15:04:05 "), txt)
+}
+
 type GameserverInfo struct {
+	Pid       int   `json:"pid"`
 	StartTime int64 `json:"startTime"`
 }
 
@@ -33,6 +41,7 @@ func NewGameserver(id int) (*Gameserver, error) {
 
 	return &Gameserver{
 		GameserverInfo: GameserverInfo{
+			Pid: cmd.Process.Pid,
 			StartTime: time.Now().UnixMilli(),
 		},
 		Cmd: cmd,
@@ -54,12 +63,13 @@ func NewGameservers() *Gameservers {
 }
 
 func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Received list request")
+	Log("Received list request")
 
 	serverInfo := make([][2]any, 0, len(gs.servers))
 	for id, server := range gs.servers {
 		serverInfo = append(serverInfo, [2]any{id, server.GameserverInfo})
 	}
+	// serverInfo = append(serverInfo, [2]any{-1, GameserverInfo{Pid: os.Getpid(), StartTime: time.Now().UnixMilli()}}) // test
 
 	if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
 		http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
@@ -76,7 +86,7 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Received start request for ID:", id)
+	Log(fmt.Sprintf("Received start request for ID: %d", id))
 
 	if _, exists := gs.servers[id]; exists {
 		http.Error(w, "Gameserver already running for this ID", http.StatusConflict)
@@ -90,7 +100,7 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	gs.servers[id] = server
-	fmt.Println("Started gameserver for ID:", id)
+	Log(fmt.Sprintf("Started gameserver for ID: %d", id))
 	w.Write([]byte("Gameserver started"))
 }
 
@@ -100,7 +110,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 	}
 
-	fmt.Println("Received close request for ID:", id)
+	Log(fmt.Sprintf("Received close request for ID: %d", id))
 
 	server, exists := gs.servers[id]
 
@@ -111,7 +121,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 
 	server.StopGameserver()
 
-	fmt.Println("Stopped gameserver for ID: ", id)
+	Log(fmt.Sprintf("Stopped gameserver for ID: %d", id))
 	w.Write([]byte("Gameserver stopped"))
 }
 
@@ -121,12 +131,13 @@ func main() {
 	gameservers := NewGameservers()
 
 	http.HandleFunc("GET /", gameservers.listRoute)
-	http.HandleFunc("POST /start/{id}", gameservers.startRoute)
+	http.HandleFunc("POST /{id}", gameservers.startRoute)
 	http.HandleFunc("POST /close/{id}", gameservers.closeRoute)
 
-	fmt.Println("Orbiter is up on port 64991")
+	Log(c.InGreen("~ Orbiter is up on port 64990 ~"))
+	Log(c.InGreen("Send a POST request to /{your place id} with the host script as the body to host a gameserver"))
 	if err := http.ListenAndServe(":64991", nil); err != nil {
-		fmt.Println("Failed to start orbiter on port 64991:", err)
+		Log(c.InRed("Failed to start Orbiter on port 64991: " + err.Error()))
 		os.Exit(1)
 	}
 }
