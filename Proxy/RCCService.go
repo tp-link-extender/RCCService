@@ -58,10 +58,6 @@ func Fatal(err error, txt string) {
 	}
 	fmt.Println(err)
 	Log(c.InRed(txt))
-	if cmd != nil && cmd.Process != nil && cmd.Process.Pid != 0 {
-		Log(c.InRed("Killing RCCService..."))
-		cmd.Process.Kill()
-	}
 	os.Exit(1)
 }
 

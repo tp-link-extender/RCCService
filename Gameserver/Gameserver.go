@@ -10,11 +10,22 @@ import (
 	"time"
 
 	c "github.com/TwiN/go-color"
+	env "github.com/joho/godotenv"
 )
 
 func Log(txt string) {
 	// Hey, Go date formatting isn't so bad
 	fmt.Println(time.Now().Format("2006/01/02, 15:04:05 "), txt)
+}
+
+func Fatal(err error, txt string) {
+	// so that I don't have to write this every time
+	if err == nil {
+		return
+	}
+	fmt.Println(err)
+	Log(c.InRed(txt))
+	os.Exit(1)
 }
 
 type GameserverInfo struct {
@@ -34,7 +45,7 @@ func NewGameserver(id int) (*Gameserver, error) {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
 
-	cmd := exec.Command(path, "-fileLocation", `C:\Users\alfee\Documents\GitHub\RCCService\Gameserver\places\`+strconv.Itoa(id)+`.rbxl`, "-script", "http://xtcy.dev/game/host?ticket=l5wty9tmqk5hj2cairef")
+	cmd := exec.Command(path, "-script", "http://xtcy.dev/game/host?ticket=l5wty9tmqk5hj2cairef")
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
@@ -126,8 +137,10 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	fmt.Println("SUP world")
+	Log(c.InYellow("Loading environment variables..."))
+	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
 
+	Log(c.InPurple("Starting gameservers..."))
 	gameservers := NewGameservers()
 
 	http.HandleFunc("GET /", gameservers.listRoute)

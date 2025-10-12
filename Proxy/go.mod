@@ -1,6 +1,6 @@
 module github.com/tp-link-extender/RCCService/Proxy
 
-go 1.25.1
+go 1.25.2
 
 require (
 	github.com/TwiN/go-color v1.4.1
