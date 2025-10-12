@@ -115,6 +115,7 @@ func Compress(b64 string, resolution int, name string, compressed *bytes.Buffer)
 	return imaging.Encode(compressed, img, imaging.PNG)
 }
 
+// ID route starts a render, coming from the Site
 func idRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InBlue("Received render request"))
 	// remove port from IP (can't just split by ":" because of IPv6)
@@ -165,10 +166,9 @@ func idRoute(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(string(body))
 
 	Log(c.InGreen("Render " + id + " started"))
-
-	w.WriteHeader(http.StatusOK)
 }
 
+// Ping callback comes from RCCService when a render status changes
 func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InBlue("Received ping callback"))
 	// remove port from IP (can't just split by ":" because of IPv6)
@@ -179,9 +179,6 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
-
-	apiKey := r.URL.Query().Get("apiKey")
-	id := r.PathValue("id")
 
 	readBody, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -212,6 +209,8 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 	var encoded bytes.Buffer
 	encoded.WriteString(status)
 	encoded.WriteByte('\n')
+
+	id := r.PathValue("id")
 
 	switch status {
 	case "Rendering":
@@ -252,15 +251,30 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send to server as binary
-	endpoint := fmt.Sprintf("%s/%s?apiKey=%s", os.Getenv("ENDPOINT"), id, apiKey)
-	// We (still) have to lie about the contentType to avoid being nuked by CORS from the website
-	if _, err = http.Post(endpoint, "text/json", &encoded); err != nil {
-		Log(c.InRed("Failed to send render data to server: " + err.Error()))
+	req, err := http.NewRequest("POST", os.Getenv("ENDPOINT")+"/"+id, &encoded)
+	if err != nil {
+		Log(c.InRed("Failed to create request to send render data to server: " + err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	// We (still) have to lie about the contentType to avoid being nuked by CORS from the website
+	req.Header.Set("Content-Type", "text/json")
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("RCC_KEY"))
+
+	res, err := client.Do(req)
+	if err != nil {
+		Log(c.InRed("Failed to send render data to server: " + err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		Log(c.InRed(fmt.Sprintf("Server responded with status code %d", res.StatusCode)))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }
 
 func main() {
