@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,6 +14,8 @@ import (
 	c "github.com/TwiN/go-color"
 	env "github.com/joho/godotenv"
 )
+
+var client http.Client
 
 func Log(txt string) {
 	// Hey, Go date formatting isn't so bad
@@ -103,6 +106,47 @@ func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
+func (gs *Gameservers) fileRoute(w http.ResponseWriter, r *http.Request) {
+	if !checkIP(r, w, "file") {
+		return
+	}
+
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+	Log(fmt.Sprintf("Received file request for ID: %d", id))
+
+	req, err := http.NewRequest("GET", "https://xtcy.dev/game/"+strconv.Itoa(id), nil)
+	if err != nil {
+		Log(c.InRed("Failed to create request: " + err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("GAMESERVER_KEY"))
+
+	res, err := client.Do(req)
+	if err != nil {
+		Log(c.InRed("Failed to send request: " + err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		Log(c.InRed(fmt.Sprintf("Server responded with status code %d", res.StatusCode)))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if _, err = io.Copy(w, res.Body); err != nil {
+		Log(c.InRed("Failed to copy response body: " + err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
 func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	if !checkIP(r, w, "start") {
 		return
@@ -165,6 +209,7 @@ func main() {
 	gameservers := NewGameservers()
 
 	http.HandleFunc("GET /", gameservers.listRoute)
+	http.HandleFunc("GET /{id}", gameservers.fileRoute)
 	http.HandleFunc("POST /{id}", gameservers.startRoute)
 	http.HandleFunc("POST /close/{id}", gameservers.closeRoute)
 
