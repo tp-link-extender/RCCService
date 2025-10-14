@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	c "github.com/TwiN/go-color"
@@ -28,6 +29,15 @@ func Fatal(err error, txt string) {
 	os.Exit(1)
 }
 
+func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
+	if ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]; ip != os.Getenv("IP") && ip != "[::1]" {
+		Log(c.InRed("IP " + ip + " is not allowed! (" + route + ")"))
+		w.WriteHeader(http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 type GameserverInfo struct {
 	Pid       int   `json:"pid"`
 	StartTime int64 `json:"startTime"`
@@ -45,14 +55,14 @@ func NewGameserver(id int) (*Gameserver, error) {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
 
-	cmd := exec.Command(path, "-script", "http://xtcy.dev/game/host?ticket=l5wty9tmqk5hj2cairef")
+	cmd := exec.Command(path, "-script", fmt.Sprintf("https://xtcy.dev/game/%d/serve", id))
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
 
 	return &Gameserver{
 		GameserverInfo: GameserverInfo{
-			Pid: cmd.Process.Pid,
+			Pid:       cmd.Process.Pid,
 			StartTime: time.Now().UnixMilli(),
 		},
 		Cmd: cmd,
@@ -75,6 +85,9 @@ func NewGameservers() *Gameservers {
 
 func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 	Log("Received list request")
+	if !checkIP(r, w, "list") {
+		return
+	}
 
 	serverInfo := make([][2]any, 0, len(gs.servers))
 	for id, server := range gs.servers {
@@ -91,6 +104,10 @@ func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
+	if !checkIP(r, w, "start") {
+		return
+	}
+
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
@@ -116,6 +133,10 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
+	if !checkIP(r, w, "close") {
+		return
+	}
+
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
