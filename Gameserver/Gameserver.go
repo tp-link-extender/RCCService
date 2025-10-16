@@ -58,7 +58,7 @@ func NewGameserver(id int) (*Gameserver, error) {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
 
-	cmd := exec.Command(path, "-script", fmt.Sprintf("https://xtcy.dev/game/%d/serve", id))
+	cmd := exec.Command(path, "-script", fmt.Sprintf("dofile(\"https://xtcy.dev/game/%d/serve\")", id))
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
 	}
