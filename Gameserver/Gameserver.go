@@ -197,6 +197,8 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 
 	server.StopGameserver()
 
+	delete(gs.servers, id)
+
 	Log(fmt.Sprintf("Stopped gameserver for ID: %d", id))
 	w.Write([]byte("Gameserver stopped"))
 }
