@@ -207,7 +207,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 func forwardData(data []byte) {
 	destAddr := &net.UDPAddr{
 		Port: 53640,
-		IP:   net.IPv6loopback,
+		IP:   net.IPv4(127, 0, 0, 1),
 	}
 	conn, err := net.DialUDP("udp", nil, destAddr)
 	if err != nil {
@@ -234,6 +234,7 @@ func startForwarder() {
 	Fatal(err, "Failed to start UDP listener on port 53641")
 
 	defer conn.Close()
+	Log(c.InBlue("UDP forwarder listening on port 53641"))
 
 	for buf := make([]byte, 2048); ; {
 		n, addr, err := conn.ReadFromUDP(buf)
