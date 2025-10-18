@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -55,7 +56,7 @@ func NewGameserver(id int) (*Gameserver, error) {
 	const path = `./staging/MercuryStudioBeta.exe`
 	_, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
+		return nil, fmt.Errorf("error retrieving studio executable metadata: %w", err)
 	}
 
 	cmd := exec.Command(path, "-script", fmt.Sprintf("dofile(\"https://xtcy.dev/game/%d/serve\")", id))
@@ -203,6 +204,45 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Gameserver stopped"))
 }
 
+func forwardData(data []byte) {
+	destAddr := &net.UDPAddr{
+		Port: 53640,
+		IP:   net.IPv6loopback,
+	}
+	conn, err := net.DialUDP("udp", nil, destAddr)
+	if err != nil {
+		Log(c.InRed("Failed to dial UDP: " + err.Error()))
+		return
+	}
+	defer conn.Close()
+
+	if _, err = conn.Write(data); err != nil {
+		Log(c.InRed("Failed to write UDP data: " + err.Error()))
+	}
+}
+
+// read all UDP packets on port 53641 and forward them to 53640
+func startForwarder() {
+	addr := net.UDPAddr{
+		Port: 53641,
+		IP:   net.IPv6zero,
+	}
+	conn, err := net.ListenUDP("udp", &addr)
+	Fatal(err, "Failed to start UDP listener on port 53641")
+
+	defer conn.Close()
+
+	for buf := make([]byte, 2048); ; {
+		n, _, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			Log(c.InRed("Failed to read UDP packet: " + err.Error()))
+			continue
+		}
+
+		go forwardData(buf[:n])
+	}
+}
+
 func main() {
 	Log(c.InYellow("Loading environment variables..."))
 	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
@@ -215,7 +255,10 @@ func main() {
 	http.HandleFunc("POST /{id}", gameservers.startRoute)
 	http.HandleFunc("POST /close/{id}", gameservers.closeRoute)
 
-	Log(c.InGreen("~ Orbiter is up on port 64990 ~"))
+	Log(c.InBlue("Starting forwarder on port 53641..."))
+	go startForwarder()
+
+	Log(c.InGreen("~ Orbiter is up on port 64991 ~"))
 	Log(c.InGreen("Send a POST request to /{your place id} with the host script as the body to host a gameserver"))
 	if err := http.ListenAndServe(":64991", nil); err != nil {
 		Log(c.InRed("Failed to start Orbiter on port 64991: " + err.Error()))
