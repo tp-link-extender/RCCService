@@ -216,9 +216,12 @@ func forwardData(data []byte) {
 	}
 	defer conn.Close()
 
-	if _, err = conn.Write(data); err != nil {
+	n, err := conn.Write(data)
+	if err != nil {
 		Log(c.InRed("Failed to write UDP data: " + err.Error()))
+		return
 	}
+	Log(c.InGreen(fmt.Sprintf("Forwarded %d bytes to %s", n, destAddr.String())))
 }
 
 // read all UDP packets on port 53641 and forward them to 53640
@@ -233,12 +236,13 @@ func startForwarder() {
 	defer conn.Close()
 
 	for buf := make([]byte, 2048); ; {
-		n, _, err := conn.ReadFromUDP(buf)
+		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			Log(c.InRed("Failed to read UDP packet: " + err.Error()))
 			continue
 		}
 
+		Log(c.InYellow(fmt.Sprintf("Forwarder received %d bytes from %s", n, addr.String())))
 		go forwardData(buf[:n])
 	}
 }
