@@ -73,7 +73,7 @@ func NewGameserver(id int) (*Gameserver, error) {
 	}, nil
 }
 
-func (g *Gameserver) StopGameserver() error {
+func (g *Gameserver) Stop() error {
 	return g.Process.Kill()
 }
 
@@ -85,6 +85,17 @@ func NewGameservers() *Gameservers {
 	return &Gameservers{
 		servers: make(map[int]*Gameserver),
 	}
+}
+
+func (gs *Gameservers) Track(server *Gameserver, id int) {
+	gs.servers[id] = server
+
+	if err := server.Cmd.Wait(); err != nil {
+		Log(c.InRed(fmt.Sprintf("Gameserver for ID %d exited with error %s", id, err.Error())))
+	} else {
+		Log(c.InYellow(fmt.Sprintf("Gameserver for ID %d exited normally", id)))
+	}
+	delete(gs.servers, id)
 }
 
 func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +183,8 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gs.servers[id] = server
+	go gs.Track(server, id)
+
 	Log(fmt.Sprintf("Started gameserver for ID: %d", id))
 	w.Write([]byte("Gameserver started"))
 }
@@ -196,7 +208,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	server.StopGameserver()
+	server.Stop()
 
 	delete(gs.servers, id)
 
