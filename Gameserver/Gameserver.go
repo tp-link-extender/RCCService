@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -56,12 +57,20 @@ func NewGameserver(id int) (*Gameserver, error) {
 	const path = `./staging/MercuryStudioBeta.exe`
 	_, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving studio executable metadata: %w", err)
+		return nil, fmt.Errorf("retrieve studio executable metadata: %w", err)
 	}
 
-	cmd := exec.Command(path, "-script", fmt.Sprintf("dofile(\"https://xtcy.dev/game/%d/serve\")", id))
+	args := []string{
+		path,
+		"-script",
+		fmt.Sprintf(`dofile("https://mercs.dev/game/%d/serve")`, id),
+	}
+	if runtime.GOOS != "windows" {
+		args = append([]string{"wine"}, args...)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("error starting MercuryStudioBeta.exe: %w", err)
+		return nil, fmt.Errorf("start MercuryStudioBeta.exe: %w", err)
 	}
 
 	return &Gameserver{

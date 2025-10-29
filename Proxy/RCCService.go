@@ -49,8 +49,6 @@ func Logr(txt string) {
 	fmt.Print("\r", time.Now().Format("2006/01/02, 15:04:05  "), txt) // fmt.Print don't add spaces between args
 }
 
-var cmd *exec.Cmd
-
 func Fatal(err error, txt string) {
 	// so that I don't have to write this every time
 	if err == nil {
@@ -64,15 +62,14 @@ func Fatal(err error, txt string) {
 func StartRCC() {
 	_, err := os.Stat("./RCCService/RCCService.exe")
 	Fatal(err, "RCCService.exe not found! Please place the RCCService folder in the current directory.")
+
+	args := []string{"./RCCService/RCCService.exe", "-Console"}
+	if runtime.GOOS != "windows" {
+		args = append([]string{"wine"}, args...)
+	}
+
 	for {
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("./RCCService/RCCService.exe", "-Console")
-		} else { // lel
-			cmd = exec.Command("wine", "./RCCService/RCCService.exe", "-Console")
-			// cmd.Env = append(cmd.Env, "DISPLAY=:0")
-			// cmd.Env = append(cmd.Env, "WINEPREFIX=/home/heliodex/prefix32")
-			// cmd.Env = append(cmd.Env, "WINEARCH=win32")
-		}
+		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Run()
