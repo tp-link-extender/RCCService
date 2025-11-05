@@ -15,8 +15,6 @@ import (
 	env "github.com/joho/godotenv"
 )
 
-var client http.Client
-
 func Log(txt string) {
 	// Hey, Go date formatting isn't so bad
 	fmt.Println(time.Now().Format("2006/01/02, 15:04:05 "), txt)
@@ -195,9 +193,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	Log(fmt.Sprintf("Received close request for ID: %d", id))
 
 	server, exists := gs.servers[id]
-
 	if !exists {
-		http.Error(w, "Gameserver not running for this ID", http.StatusNotFound)
 		return
 	}
 
@@ -206,7 +202,6 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	delete(gs.servers, id)
 
 	Log(fmt.Sprintf("Stopped gameserver for ID: %d", id))
-	w.Write([]byte("Gameserver stopped"))
 }
 
 func main() {
@@ -219,7 +214,7 @@ func main() {
 	http.HandleFunc("GET /", gameservers.listRoute)
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
 	http.HandleFunc("POST /{id}", gameservers.startRoute)
-	http.HandleFunc("POST /close/{id}", gameservers.closeRoute)
+	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
 
 	// the forwarder don't actually work 😭 (it seems to work normally anywayso)
 
