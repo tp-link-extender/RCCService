@@ -164,7 +164,6 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	Log(fmt.Sprintf("Received start request for ID: %d", id))
 
 	if _, exists := gs.servers[id]; exists {
-		http.Error(w, "Gameserver already running for this ID", http.StatusConflict)
 		return
 	}
 
@@ -177,7 +176,6 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	go gs.Track(server, id)
 
 	Log(fmt.Sprintf("Started gameserver for ID: %d", id))
-	w.Write([]byte("Gameserver started"))
 }
 
 func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
@@ -213,13 +211,12 @@ func main() {
 
 	http.HandleFunc("GET /", gameservers.listRoute)
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
-	http.HandleFunc("POST /{id}", gameservers.startRoute)
+	http.HandleFunc("PUT /{id}", gameservers.startRoute)
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
 
 	// the forwarder don't actually work 😭 (it seems to work normally anywayso)
 
 	Log(c.InGreen("~ Orbiter is up on port 64991 ~"))
-	Log(c.InGreen("Send a POST request to /{your place id} with the host script as the body to host a gameserver"))
 	if err := http.ListenAndServe(":64991", nil); err != nil {
 		Log(c.InRed("Failed to start Orbiter on port 64991: " + err.Error()))
 		os.Exit(1)
