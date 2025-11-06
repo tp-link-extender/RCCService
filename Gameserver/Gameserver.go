@@ -31,7 +31,15 @@ func Fatal(err error, txt string) {
 }
 
 func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
-	if ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]; ip != os.Getenv("IP") && ip != "[::1]" {
+	allowedIPs := map[string]struct{}{
+		"[::1]":           {},
+		"127.0.0.1":       {},
+		os.Getenv("IPV4"): {},
+		os.Getenv("IPV6"): {},
+	}
+
+	ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
+	if _, ok := allowedIPs[ip]; !ok {
 		Log(c.InRed("IP " + ip + " is not allowed! (" + route + ")"))
 		w.WriteHeader(http.StatusForbidden)
 		return false
