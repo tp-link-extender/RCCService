@@ -124,7 +124,7 @@ func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
-	if !checkIP(r, w, "satus") {
+	if !checkIP(r, w, "status") {
 		return
 	}
 
