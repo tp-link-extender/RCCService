@@ -8,3 +8,5 @@ Gameserver/staging
 .env
 RCCProxy
 RCCProxy.exe
+Orbiter/bin
+Orbiter/obj
