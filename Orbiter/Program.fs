@@ -2,7 +2,7 @@
 open Microsoft.FSharp.Core.Result
 open System
 open System.Diagnostics
-open System
+open System.Net.Sockets
 
 let (>>=) f x = bind x f
 
@@ -19,10 +19,7 @@ let getStudio () =
 
 let getArgs (id: int) (path: string) =
     // get current operating system
-    let args =
-        [ path
-          "--script"
-          $"dofile(\"http://mercs.dev/game/{id}/serve\")" ]
+    let args = [ path; "--script"; $"dofile(\"http://mercs.dev/game/{id}/serve\")" ]
 
     Ok(
         if OperatingSystem.IsLinux() then
@@ -50,14 +47,14 @@ let startGameserver (args: string list) =
         proc.BeginErrorReadLine()
 
         Ok proc
-    with
-    | ex -> Error $"Failed to start gameserver: {ex.Message}"
+    with ex ->
+        Error $"Failed to start gameserver: {ex.Message}"
 
-let pollMonitor (getter: unit -> 'a) (callback: 'a -> unit) =
+let pollMonitor (callback: unit -> unit) =
     let rec loop () =
         async {
-            callback (getter ())
-            do! Async.Sleep 1000
+            callback ()
+            do! Async.Sleep 100
             return! loop ()
         }
 
@@ -67,26 +64,36 @@ let monitorGameserver (proc: Process) =
     proc.Exited.Add(fun _ -> printfn "[INFO] Gameserver process has exited.")
 
     // get when the process is responding
-    pollMonitor
-        (fun () -> proc.Responding)
-        (fun responding ->
-            if responding then
-                printfn "[INFO] Gameserver process is responding."
-            else
-                printfn "[WARN] Gameserver process is not responding."
+    pollMonitor (fun () ->
+        // check if we can start a server on UDP port 53640
+        let endpoint = Net.IPEndPoint(Net.IPAddress.Loopback, 53640)
+        use socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
+        let canBind =
+            try
+                socket.Bind endpoint
+                true
+            with _ -> false
+        
+        if canBind then
+            printfn "[INFO] Gameserver is not responding."
+        else
+            printfn "[INFO] Gameserver is responding."
 
-            let success = proc.CloseMainWindow()
-
-            if not success then
-                printfn "[WARN] Failed to close main window of gameserver process.")
+        proc.Refresh()
+        printfn $"  Physical memory usage     : {float proc.WorkingSet64 / 1e6}"
+        printfn $"  Base priority             : {proc.BasePriority}"
+        printfn $"  Priority class            : {proc.PriorityClass}"
+        printfn $"  User processor time       : {proc.UserProcessorTime}"
+        printfn $"  Privileged processor time : {proc.PrivilegedProcessorTime}"
+        printfn $"  Total processor time      : {proc.TotalProcessorTime}"
+        printfn $"  Paged system memory size  : {proc.PagedSystemMemorySize64}"
+        printfn $"  Paged memory size         : {proc.PagedMemorySize64}")
 
 
     |> ignore
 
     // print whenever window title changes
-    proc.WaitForExitAsync()
-    |> Async.AwaitTask
-    |> Async.RunSynchronously
+    proc.WaitForExitAsync() |> Async.AwaitTask |> Async.RunSynchronously
 
     Ok()
 
