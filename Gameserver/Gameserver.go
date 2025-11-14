@@ -112,11 +112,14 @@ func NewGameservers() *Gameservers {
 
 func CheckServerUp() bool {
 	const port = 53640
+	const proto = "udp4"
 
 	// start a UDP server on the same port and see if it errors
-	addr := fmt.Sprintf(":%d", port)
-	conn, err := net.ListenPacket("udp", addr)
+	// gee, I sure hope this never interferes with the actual server starting
+	laddr, err := net.ResolveUDPAddr(proto, fmt.Sprintf(":%d", port))
+	conn, err := net.ListenUDP(proto, laddr) // gs-client communication only works on ipv4...
 	if err != nil {
+		Log(fmt.Sprintf("[check] failed to start UDP server: %s", err.Error()))
 		return true
 	}
 	conn.Close()
