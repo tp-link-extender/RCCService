@@ -181,7 +181,6 @@ func (gs *Gameservers) Track(server *Gameserver, id int) {
 		Log(c.InYellow(fmt.Sprintf("[track] %d process - exited normally", id)))
 	}
 	server.Status = Closed
-	delete(gs.servers, id)
 }
 
 func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
@@ -216,9 +215,8 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	Log(fmt.Sprintf("[status] %d request received", id))
 
-	// server, exists := gs.servers[id]
 	server, exists := gs.servers[id]
-	if !exists {
+	if !exists || server.Status == Closed {
 		Log(fmt.Sprintf("[status] %d not running", id))
 		http.Error(w, "Gameserver not running for this ID", http.StatusNotFound)
 		return
@@ -245,7 +243,7 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 
 	Log(fmt.Sprintf("[start] %d request received", id))
 
-	if _, exists := gs.servers[id]; exists {
+	if s, exists := gs.servers[id]; exists && s.Status != Closed {
 		return
 	}
 
@@ -274,13 +272,12 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	Log(fmt.Sprintf("[close] %d request received", id))
 
 	server, exists := gs.servers[id]
-	if !exists {
+	if !exists || server.Status == Closed {
 		return
 	}
 
 	server.Stop()
-
-	delete(gs.servers, id)
+	server.Status = Closed
 
 	Log(fmt.Sprintf("[close] %d closed", id))
 }
