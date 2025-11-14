@@ -127,7 +127,7 @@ func TrackNetwork(server *Gameserver, id int) {
 	var up bool
 
 	start := time.Now()
-	for i := 0; time.Since(start) < 10*time.Second; i++ {
+	for i := 0; time.Since(start) < 30*time.Second; i++ {
 		time.Sleep(100 * time.Millisecond)
 		if server.Status == Closed {
 			return
