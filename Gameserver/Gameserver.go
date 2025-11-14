@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -47,9 +48,18 @@ func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
 	return true
 }
 
+type Status uint8
+
+const (
+	Starting Status = iota
+	Running
+	Closed
+)
+
 type GameserverInfo struct {
-	Pid       int   `json:"pid"`
-	StartTime int64 `json:"startTime"`
+	Pid       int    `json:"pid"`
+	StartTime int64  `json:"startTime"`
+	Status    Status `json:"status"`
 }
 
 type Gameserver struct {
@@ -100,14 +110,77 @@ func NewGameservers() *Gameservers {
 	}
 }
 
+func CheckServerUp() bool {
+	const port = 53640
+
+	// start a UDP server on the same port and see if it errors
+	addr := fmt.Sprintf(":%d", port)
+	conn, err := net.ListenPacket("udp", addr)
+	if err != nil {
+		return true
+	}
+	conn.Close()
+	return false
+}
+
+func TrackNetwork(server *Gameserver, id int) {
+	var up bool
+
+	start := time.Now()
+	for i := 0; time.Since(start) < 10*time.Second; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if server.Status == Closed {
+			return
+		}
+		up = CheckServerUp()
+		if up {
+			break
+		}
+		if i%10 == 0 {
+			Log(c.InBlue(fmt.Sprintf("[track] %d network - waiting for start...", id)))
+		}
+	}
+
+	if !up {
+		Log(c.InRed(fmt.Sprintf("[track] %d network - failed to start in time, terminating", id)))
+		server.Stop()
+		server.Status = Closed
+		return
+	}
+
+	Log(c.InGreen(fmt.Sprintf("[track] %d network - is up and running", id)))
+
+	for {
+		time.Sleep(10 * time.Second)
+		if server.Status == Closed {
+			return
+		}
+		if !CheckServerUp() {
+			break
+		}
+	}
+
+	Log(c.InRed(fmt.Sprintf("[track] %d network - appears to be down, terminating", id)))
+	server.Stop()
+	server.Status = Closed
+}
+
 func (gs *Gameservers) Track(server *Gameserver, id int) {
 	gs.servers[id] = server
 
-	if err := server.Cmd.Wait(); err != nil {
-		Log(c.InRed(fmt.Sprintf("Gameserver for ID %d exited with error %s", id, err.Error())))
-	} else {
-		Log(c.InYellow(fmt.Sprintf("Gameserver for ID %d exited normally", id)))
+	go TrackNetwork(server, id)
+
+	err := server.Cmd.Wait()
+	if server.Status == Closed {
+		return
 	}
+
+	if err != nil {
+		Log(c.InRed(fmt.Sprintf("[track] %d process - exited with error %s", id, err.Error())))
+	} else {
+		Log(c.InYellow(fmt.Sprintf("[track] %d process - exited normally", id)))
+	}
+	server.Status = Closed
 	delete(gs.servers, id)
 }
 
@@ -141,11 +214,12 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
-	Log(fmt.Sprintf("Received status request for ID: %d", id))
+	Log(fmt.Sprintf("[status] %d request received", id))
 
 	// server, exists := gs.servers[id]
 	server, exists := gs.servers[id]
 	if !exists {
+		Log(fmt.Sprintf("[status] %d not running", id))
 		http.Error(w, "Gameserver not running for this ID", http.StatusNotFound)
 		return
 	}
@@ -169,7 +243,7 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Log(fmt.Sprintf("Received start request for ID: %d", id))
+	Log(fmt.Sprintf("[start] %d request received", id))
 
 	if _, exists := gs.servers[id]; exists {
 		return
@@ -177,13 +251,14 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 
 	server, err := NewGameserver(id)
 	if err != nil {
+		Log(c.InRed(fmt.Sprintf("[start] failed to start gameserver for ID %d: %s", id, err.Error())))
 		http.Error(w, "Failed to start gameserver: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	go gs.Track(server, id)
 
-	Log(fmt.Sprintf("Started gameserver for ID: %d", id))
+	Log(fmt.Sprintf("[start] %d started", id))
 }
 
 func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +271,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
 	}
 
-	Log(fmt.Sprintf("Received close request for ID: %d", id))
+	Log(fmt.Sprintf("[close] %d request received", id))
 
 	server, exists := gs.servers[id]
 	if !exists {
@@ -207,7 +282,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 
 	delete(gs.servers, id)
 
-	Log(fmt.Sprintf("Stopped gameserver for ID: %d", id))
+	Log(fmt.Sprintf("[close] %d closed", id))
 }
 
 func main() {
