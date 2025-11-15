@@ -51,15 +51,25 @@ func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
 type Status uint8
 
 const (
-	Starting Status = iota
+	Closed Status = iota
+	Starting
 	Running
-	Closed
 )
 
 type GameserverInfo struct {
-	Pid       int    `json:"pid"`
-	StartTime int64  `json:"startTime"`
-	Status    Status `json:"status"`
+	Pid           int    `json:"pid"`
+	StartTime     int64  `json:"startTime"`
+	Status        Status `json:"status"`
+	statusChanged chan struct{}
+}
+
+func (g *GameserverInfo) SetStatus(s Status) {
+	Log(fmt.Sprintf("[status] - changed: %d -> %d", g.Status, s))
+	g.Status = s
+	g.statusChanged <- struct{}{}
+	if s == Closed {
+		close(g.statusChanged)
+	}
 }
 
 type Gameserver struct {
@@ -89,24 +99,29 @@ func NewGameserver(id int) (*Gameserver, error) {
 
 	return &Gameserver{
 		GameserverInfo: GameserverInfo{
-			Pid:       cmd.Process.Pid,
-			StartTime: time.Now().UnixMilli(),
+			Pid:           cmd.Process.Pid,
+			StartTime:     time.Now().UnixMilli(),
+			Status:        Starting,
+			statusChanged: make(chan struct{}),
 		},
 		Cmd: cmd,
 	}, nil
 }
 
 func (g *Gameserver) Stop() error {
+	g.SetStatus(Closed)
 	return g.Process.Kill()
 }
 
 type Gameservers struct {
-	servers map[int]*Gameserver
+	servers     map[int]*Gameserver
+	serverAdded chan int
 }
 
 func NewGameservers() *Gameservers {
 	return &Gameservers{
-		servers: make(map[int]*Gameserver),
+		servers:     make(map[int]*Gameserver),
+		serverAdded: make(chan int),
 	}
 }
 
@@ -119,7 +134,6 @@ func CheckServerUp() bool {
 	laddr, err := net.ResolveUDPAddr(proto, fmt.Sprintf(":%d", port))
 	conn, err := net.ListenUDP(proto, laddr) // gs-client communication only works on ipv4...
 	if err != nil {
-		Log(fmt.Sprintf("[check] failed to start UDP server: %s", err.Error()))
 		return true
 	}
 	conn.Close()
@@ -147,11 +161,11 @@ func TrackNetwork(server *Gameserver, id int) {
 	if !up {
 		Log(c.InRed(fmt.Sprintf("[track] %d network - failed to start in time, terminating", id)))
 		server.Stop()
-		server.Status = Closed
 		return
 	}
 
 	Log(c.InGreen(fmt.Sprintf("[track] %d network - is up and running", id)))
+	server.SetStatus(Running)
 
 	for {
 		time.Sleep(10 * time.Second)
@@ -165,11 +179,11 @@ func TrackNetwork(server *Gameserver, id int) {
 
 	Log(c.InRed(fmt.Sprintf("[track] %d network - appears to be down, terminating", id)))
 	server.Stop()
-	server.Status = Closed
 }
 
 func (gs *Gameservers) Track(server *Gameserver, id int) {
 	gs.servers[id] = server
+	gs.serverAdded <- id
 
 	go TrackNetwork(server, id)
 
@@ -183,7 +197,7 @@ func (gs *Gameservers) Track(server *Gameserver, id int) {
 	} else {
 		Log(c.InYellow(fmt.Sprintf("[track] %d process - exited normally", id)))
 	}
-	server.Status = Closed
+	server.SetStatus(Closed)
 }
 
 func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +247,74 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
+func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
+	if !checkIP(r, w, "stream") {
+		return
+	}
+
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+	Log(fmt.Sprintf("[stream] %d request received", id))
+
+	// Return events from statusChanged as SSE
+
+	server, exists := gs.servers[id]
+	if !exists {
+		// wait for server to be started
+		Log(fmt.Sprintf("[stream] %d waiting for server to be started", id))
+
+		start := time.Now()
+		for time.Since(start) < 30*time.Second {
+			<-gs.serverAdded
+			server, exists = gs.servers[id]
+			if exists {
+				Log(fmt.Sprintf("[stream] %d server started, proceeding", id))
+				break
+			}
+		}
+	}
+	if !exists {
+		http.Error(w, "Gameserver not found for this ID", http.StatusNotFound)
+		return
+	}
+
+	// Set headers for SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	enc := json.NewEncoder(w)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+
+	send := func(s Status) {
+		Log(fmt.Sprintf("[stream] %d sending update", id))
+		w.Write([]byte("data: "))
+		enc.Encode(s)
+		w.Write([]byte{'\n'})
+		flusher.Flush()
+	}
+
+	for {
+		send(server.Status)
+		if server.Status == Running || server.Status == Closed {
+			return
+		}
+		_, more := <-server.statusChanged
+		if !more {
+			Log(fmt.Sprintf("[stream] %d status channel closed, ending stream", id))
+			return
+		}
+	}
+}
+
 func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	if !checkIP(r, w, "start") {
 		return
@@ -280,7 +362,6 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	server.Stop()
-	server.Status = Closed
 
 	Log(fmt.Sprintf("[close] %d closed", id))
 }
@@ -294,6 +375,7 @@ func main() {
 
 	http.HandleFunc("GET /", gameservers.listRoute)
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
+	http.HandleFunc("GET /{id}/stream", gameservers.streamRoute)
 	http.HandleFunc("PUT /{id}", gameservers.startRoute)
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
 
