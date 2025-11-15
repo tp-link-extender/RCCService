@@ -248,9 +248,7 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
-	if !checkIP(r, w, "stream") {
-		return
-	}
+	// don't check the IP, this route is public
 
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
@@ -304,7 +302,7 @@ func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		send(server.Status)
-		if server.Status == Running || server.Status == Closed {
+		if server.Status != Starting {
 			return
 		}
 		_, more := <-server.statusChanged
@@ -375,7 +373,7 @@ func main() {
 
 	http.HandleFunc("GET /", gameservers.listRoute)
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
-	http.HandleFunc("GET /{id}/stream", gameservers.streamRoute)
+	http.HandleFunc("GET /stream/{id}", gameservers.streamRoute) // public
 	http.HandleFunc("PUT /{id}", gameservers.startRoute)
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
 
