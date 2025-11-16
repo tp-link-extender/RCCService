@@ -13,6 +13,7 @@ import (
 	"time"
 
 	c "github.com/TwiN/go-color"
+	"github.com/caddyserver/certmagic"
 	env "github.com/joho/godotenv"
 )
 
@@ -247,72 +248,6 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
-func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
-	// don't check the IP, this route is public
-
-	id, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
-		return
-	}
-	Log(fmt.Sprintf("[stream] %d request received", id))
-
-	// Return events from statusChanged as SSE
-
-	server, exists := gs.servers[id]
-	if !exists {
-		// wait for server to be started
-		Log(fmt.Sprintf("[stream] %d waiting for server to be started", id))
-
-		start := time.Now()
-		for time.Since(start) < 30*time.Second {
-			<-gs.serverAdded
-			server, exists = gs.servers[id]
-			if exists {
-				Log(fmt.Sprintf("[stream] %d server started, proceeding", id))
-				break
-			}
-		}
-	}
-	if !exists {
-		http.Error(w, "Gameserver not found for this ID", http.StatusNotFound)
-		return
-	}
-
-	// Set headers for SSE
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	enc := json.NewEncoder(w)
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
-		return
-	}
-
-	send := func(s Status) {
-		Log(fmt.Sprintf("[stream] %d sending update", id))
-		w.Write([]byte("data: "))
-		enc.Encode(s)
-		w.Write([]byte{'\n'})
-		flusher.Flush()
-	}
-
-	for {
-		send(server.Status)
-		if server.Status != Starting {
-			return
-		}
-		_, more := <-server.statusChanged
-		if !more {
-			Log(fmt.Sprintf("[stream] %d status channel closed, ending stream", id))
-			return
-		}
-	}
-}
-
 func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 	if !checkIP(r, w, "start") {
 		return
@@ -364,6 +299,96 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	Log(fmt.Sprintf("[close] %d closed", id))
 }
 
+func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
+	// don't check the IP, this route is public
+
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+	Log(fmt.Sprintf("[stream] %d request received", id))
+
+	// Return events from statusChanged as SSE
+	const wait = 30 * time.Second
+
+	server, exists := gs.servers[id]
+	if !exists {
+		// wait for server to be started
+		Log(fmt.Sprintf("[stream] %d waiting for server to be started", id))
+
+		start := time.Now()
+	loop:
+		for time.Since(start) < wait {
+			select {
+			case <-gs.serverAdded:
+				server, exists = gs.servers[id]
+				if exists {
+					Log(fmt.Sprintf("[stream] %d server started, proceeding", id))
+					break loop
+				}
+			case <-time.After(wait):
+				break loop
+			}
+		}
+	}
+	if !exists {
+		http.Error(w, "Gameserver not found for this ID", http.StatusNotFound)
+		return
+	}
+
+	// Set headers for SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	enc := json.NewEncoder(w)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+
+	send := func(s Status) {
+		Log(fmt.Sprintf("[stream] %d sending update", id))
+		w.Write([]byte("data: "))
+		enc.Encode(s)
+		w.Write([]byte{'\n'})
+		flusher.Flush()
+	}
+
+	for {
+		send(server.Status)
+		if server.Status != Starting {
+			return
+		}
+		_, more := <-server.statusChanged
+		if !more {
+			Log(fmt.Sprintf("[stream] %d status channel closed, ending stream", id))
+			return
+		}
+	}
+}
+
+func servePublicStatus(gameservers *Gameservers) {
+	mux := http.NewServeMux()
+
+	if os.Getenv("ENV") != "dev" {
+		err := certmagic.HTTPS([]string{"gs.mercs.dev"}, mux)
+		if err != nil {
+			Log(c.InRed("Failed to start public status server with HTTPS: " + err.Error()))
+			return
+		}
+	}
+
+	mux.HandleFunc("GET /{id}", gameservers.streamRoute) // public
+	Log(c.InPurple("~ Public status server is up on port 64992 ~"))
+	if err := http.ListenAndServe(":64992", mux); err != nil {
+		Log(c.InRed("Failed to start public status server: " + err.Error()))
+	}
+}
+
 func main() {
 	Log(c.InYellow("Loading environment variables..."))
 	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
@@ -373,10 +398,10 @@ func main() {
 
 	http.HandleFunc("GET /", gameservers.listRoute)
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
-	http.HandleFunc("GET /stream/{id}", gameservers.streamRoute) // public
 	http.HandleFunc("PUT /{id}", gameservers.startRoute)
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
 
+	go servePublicStatus(gameservers)
 	// the forwarder don't actually work 😭 (it seems to work normally anywayso)
 
 	Log(c.InGreen("~ Orbiter is up on port 64991 ~"))
