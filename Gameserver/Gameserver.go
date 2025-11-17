@@ -103,7 +103,7 @@ func NewGameserver(id int) (*Gameserver, error) {
 			Pid:           cmd.Process.Pid,
 			StartTime:     time.Now().UnixMilli(),
 			Status:        Starting,
-			statusChanged: make(chan struct{}),
+			statusChanged: make(chan struct{}, 100),
 		},
 		Cmd: cmd,
 	}, nil
@@ -122,7 +122,7 @@ type Gameservers struct {
 func NewGameservers() *Gameservers {
 	return &Gameservers{
 		servers:     make(map[int]*Gameserver),
-		serverAdded: make(chan int),
+		serverAdded: make(chan int, 100),
 	}
 }
 
@@ -144,14 +144,15 @@ func CheckServerUp() bool {
 func TrackNetwork(server *Gameserver, id int) {
 	var up bool
 
+	Log(c.InBlue(fmt.Sprintf("[track] %d network - monitoring network status...", id)))
+
 	start := time.Now()
 	for i := 0; time.Since(start) < 30*time.Second; i++ {
 		time.Sleep(100 * time.Millisecond)
 		if server.Status == Closed {
 			return
 		}
-		up = CheckServerUp()
-		if up {
+		if up = CheckServerUp(); up {
 			break
 		}
 		if i%10 == 0 {
@@ -185,6 +186,8 @@ func TrackNetwork(server *Gameserver, id int) {
 func (gs *Gameservers) Track(server *Gameserver, id int) {
 	gs.servers[id] = server
 	gs.serverAdded <- id
+
+	Log(fmt.Sprintf("[track] %d - tracking started", id))
 
 	go TrackNetwork(server, id)
 
@@ -301,6 +304,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 
 func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
 	// don't check the IP, this route is public
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
