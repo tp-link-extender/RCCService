@@ -377,19 +377,20 @@ func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
 
 func servePublicStatus(gameservers *Gameservers) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{id}", gameservers.streamRoute) // public
 
 	if os.Getenv("ENV") != "dev" {
+		Log(c.InPurple("~ Public status server is up on port 443 ~"))
 		err := certmagic.HTTPS([]string{"gs.mercs.dev"}, mux)
 		if err != nil {
 			Log(c.InRed("Failed to start public status server with HTTPS: " + err.Error()))
 			return
 		}
-	}
-
-	mux.HandleFunc("GET /{id}", gameservers.streamRoute) // public
-	Log(c.InPurple("~ Public status server is up on port 64992 ~"))
-	if err := http.ListenAndServe(":64992", mux); err != nil {
-		Log(c.InRed("Failed to start public status server: " + err.Error()))
+	} else {
+		Log(c.InPurple("~ Public status server is up on port 64992 ~"))
+		if err := http.ListenAndServe(":64992", mux); err != nil {
+			Log(c.InRed("Failed to start public status server: " + err.Error()))
+		}
 	}
 }
 
