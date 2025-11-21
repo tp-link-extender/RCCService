@@ -126,8 +126,7 @@ func NewGameservers() *Gameservers {
 	}
 }
 
-func CheckServerUp() bool {
-	const port = 53640
+func CheckServerUp(port int) bool {
 	const proto = "udp4"
 
 	// start a UDP server on the same port and see if it errors
@@ -141,10 +140,15 @@ func CheckServerUp() bool {
 	return false
 }
 
+func idToPort(id int) int {
+	return 10000 + (id % 50000)
+}
+
 func TrackNetwork(server *Gameserver, id int) {
 	var up bool
 
-	Log(c.InBlue(fmt.Sprintf("[track] %d network - monitoring network status...", id)))
+	port := idToPort(id)
+	Log(c.InBlue(fmt.Sprintf("[track] %d network - (port %05d) monitoring network status...", id, port)))
 
 	start := time.Now()
 	for i := 0; time.Since(start) < 30*time.Second; i++ {
@@ -152,21 +156,21 @@ func TrackNetwork(server *Gameserver, id int) {
 		if server.Status == Closed {
 			return
 		}
-		if up = CheckServerUp(); up {
+		if up = CheckServerUp(port); up {
 			break
 		}
 		if i%10 == 0 {
-			Log(c.InBlue(fmt.Sprintf("[track] %d network - waiting for start...", id)))
+			Log(c.InBlue(fmt.Sprintf("[track] %d network - (port %05d) waiting for start...", id, port)))
 		}
 	}
 
 	if !up {
-		Log(c.InRed(fmt.Sprintf("[track] %d network - failed to start in time, terminating", id)))
+		Log(c.InRed(fmt.Sprintf("[track] %d network - (port %05d) failed to start in time, terminating", id, port)))
 		server.Stop()
 		return
 	}
 
-	Log(c.InGreen(fmt.Sprintf("[track] %d network - is up and running", id)))
+	Log(c.InGreen(fmt.Sprintf("[track] %d network - (port %05d) is up and running", id, port)))
 	server.SetStatus(Running)
 
 	for {
@@ -174,12 +178,12 @@ func TrackNetwork(server *Gameserver, id int) {
 		if server.Status == Closed {
 			return
 		}
-		if !CheckServerUp() {
+		if !CheckServerUp(port) {
 			break
 		}
 	}
 
-	Log(c.InRed(fmt.Sprintf("[track] %d network - appears to be down, terminating", id)))
+	Log(c.InRed(fmt.Sprintf("[track] %d network - (port %05d) appears to be down, terminating", id, port)))
 	server.Stop()
 }
 
