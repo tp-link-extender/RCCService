@@ -141,7 +141,7 @@ func CheckServerUp(port int) bool {
 }
 
 func idToPort(id int) int {
-	return 10000 + (id % 50000)
+	return 53640
 }
 
 func TrackNetwork(server *Gameserver, id int) {
