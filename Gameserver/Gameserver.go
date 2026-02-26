@@ -1,18 +1,23 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
-	c "github.com/TwiN/go-color"
+	c "github.com/TwiN/go-color" // the log colours are kinda random loll whatever
 	"github.com/caddyserver/certmagic"
 	env "github.com/joho/godotenv"
 )
@@ -30,6 +35,95 @@ func Fatal(err error, txt string) {
 	fmt.Println(err)
 	Log(c.InRed(txt))
 	os.Exit(1)
+}
+
+const (
+	path             = `./staging/MercuryStudioBeta.exe`
+	versionPathStart = "./Versions/version-"
+)
+
+// We don't need the launcher from setup, we're just running Studio
+// (arguably we don't need the Client either, but there's gonna be so many more clients than servers it's probably worth it)
+func InstallSetup(version string) error {
+	// http request to setup.{Domain}/version/download
+	res, err := http.Get(fmt.Sprintf("https://setup.%s/%s", os.Getenv("DOMAIN"), version))
+	if err != nil {
+		return fmt.Errorf("get version from setup: %w", err)
+	}
+	defer res.Body.Close()
+
+	Log(c.InPurple("Get successful, downloading and extracting..."))
+
+	// gunzip time
+	gz, err := gzip.NewReader(res.Body)
+	if err != nil {
+		return fmt.Errorf("create gzip reader: %w", err)
+	}
+
+	versionDir := versionPathStart + version
+	if err := os.MkdirAll(versionDir, 0755); err != nil {
+		return fmt.Errorf("create version directory: %w", err)
+	}
+
+	// untar time
+	tr := tar.NewReader(gz)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar header: %w", err)
+		}
+
+		switch target := filepath.Join(versionDir, header.Name); header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return fmt.Errorf("create directory: %w", err)
+			}
+		case tar.TypeReg:
+			f, err := os.Create(target)
+			if err != nil {
+				return fmt.Errorf("create file: %w", err)
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return fmt.Errorf("write file: %w", err)
+			}
+			f.Close()
+		default:
+			return fmt.Errorf("unknown tar header type: %c in file %s", header.Typeflag, header.Name)
+		}
+	}
+
+	Log(c.InGreen(fmt.Sprintf("Version %s downloaded and extracted successfully", version)))
+	return nil
+}
+
+func LoadFromSetup() error {
+	// http request to setup.{Domain}/version
+	res, err := http.Get(fmt.Sprintf("https://setup.%s/version", os.Getenv("DOMAIN")))
+	if err != nil {
+		return fmt.Errorf("get version from setup: %w", err)
+	}
+
+	verbytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("read version from response body: %w", err)
+	}
+	res.Body.Close()
+
+	ver := string(verbytes)
+
+	// check if ./Versions/{ver} exists
+	if _, err := os.Stat(versionPathStart + ver); errors.Is(err, os.ErrNotExist) {
+		Log(c.InPurple(fmt.Sprintf("Version %s not found, downloading from setup.%s...", ver, os.Getenv("DOMAIN"))))
+		return InstallSetup(ver)
+	}
+
+	Log(c.InGreen(fmt.Sprintf("Version %s already exists, skipping download", ver)))
+	return nil
 }
 
 func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
@@ -79,16 +173,15 @@ type Gameserver struct {
 }
 
 func NewGameserver(id int) (*Gameserver, error) {
-	const path = `./staging/MercuryStudioBeta.exe`
-	_, err := os.Stat(path)
-	if err != nil {
+	// eh it still makes sense to have this stat
+	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("retrieve studio executable metadata: %w", err)
 	}
 
 	args := []string{
 		path,
 		"-script",
-		fmt.Sprintf(`dofile("http://mercs.dev/game/%d/serve")`, id),
+		fmt.Sprintf(`dofile("http://%s/game/%d/serve")`, os.Getenv("DOMAIN"), id),
 	}
 	if runtime.GOOS != "windows" {
 		args = append([]string{"wine"}, args...)
@@ -384,14 +477,15 @@ func servePublicStatus(gameservers *Gameservers) {
 	mux.HandleFunc("GET /{id}", gameservers.streamRoute) // public
 
 	if os.Getenv("ENV") != "dev" {
-		Log(c.InPurple("~ Public status server is up on port 443 ~"))
-		err := certmagic.HTTPS([]string{"gs.mercs.dev"}, mux)
+		Log(c.InCyan("~ Public status server is up on port 443 ~"))
+		gsDomain := fmt.Sprintf("gs.%s", os.Getenv("DOMAIN"))
+		err := certmagic.HTTPS([]string{gsDomain}, mux)
 		if err != nil {
 			Log(c.InRed("Failed to start public status server with HTTPS: " + err.Error()))
 			return
 		}
 	} else {
-		Log(c.InPurple("~ Public status server is up on port 64992 ~"))
+		Log(c.InCyan("~ Public status server is up on port 64992 ~"))
 		if err := http.ListenAndServe(":64992", mux); err != nil {
 			Log(c.InRed("Failed to start public status server: " + err.Error()))
 		}
@@ -401,6 +495,10 @@ func servePublicStatus(gameservers *Gameservers) {
 func main() {
 	Log(c.InYellow("Loading environment variables..."))
 	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
+
+	Log(c.InYellow("Checking for gameserver files..."))
+	err := LoadFromSetup()
+	Fatal(err, c.InRed("Failed to load necessary gameserver files from Setup domain."))
 
 	Log(c.InPurple("Starting gameservers..."))
 	gameservers := NewGameservers()
