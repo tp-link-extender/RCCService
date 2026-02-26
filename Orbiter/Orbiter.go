@@ -38,7 +38,7 @@ func Fatal(err error, txt string) {
 }
 
 const (
-	path             = `./staging/MercuryStudioBeta.exe`
+	exeName          = `MercuryStudioBeta.exe`
 	versionPathStart = "./Versions/version-"
 )
 
@@ -101,16 +101,16 @@ func InstallSetup(version string) error {
 	return nil
 }
 
-func LoadFromSetup() error {
+func LoadFromSetup() (string, error) {
 	// http request to setup.{Domain}/version
 	res, err := http.Get(fmt.Sprintf("https://setup.%s/version", os.Getenv("DOMAIN")))
 	if err != nil {
-		return fmt.Errorf("get version from setup: %w", err)
+		return "", fmt.Errorf("get version from setup: %w", err)
 	}
 
 	verbytes, err := io.ReadAll(res.Body)
 	if err != nil {
-		return fmt.Errorf("read version from response body: %w", err)
+		return  "", fmt.Errorf("read version from response body: %w", err)
 	}
 	res.Body.Close()
 
@@ -119,11 +119,11 @@ func LoadFromSetup() error {
 	// check if ./Versions/{ver} exists
 	if _, err := os.Stat(versionPathStart + ver); errors.Is(err, os.ErrNotExist) {
 		Log(c.InPurple(fmt.Sprintf("Version %s not found, downloading from setup.%s...", ver, os.Getenv("DOMAIN"))))
-		return InstallSetup(ver)
+		return ver, InstallSetup(ver)
 	}
 
 	Log(c.InGreen(fmt.Sprintf("Version %s already exists, skipping download", ver)))
-	return nil
+	return ver, nil
 }
 
 func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
@@ -172,14 +172,16 @@ type Gameserver struct {
 	*exec.Cmd
 }
 
-func NewGameserver(id int) (*Gameserver, error) {
-	// eh it still makes sense to have this stat
-	if _, err := os.Stat(path); err != nil {
+func NewGameserver(version string, id int) (*Gameserver, error) {
+	exePath := fmt.Sprintf("%s%s/%s", versionPathStart, version, exeName)
+
+	// eh it still (kinda) makes sense to have this stat
+	if _, err := os.Stat(exePath); err != nil {
 		return nil, fmt.Errorf("retrieve studio executable metadata: %w", err)
 	}
 
 	args := []string{
-		path,
+		exePath,
 		"-script",
 		fmt.Sprintf(`dofile("http://%s/game/%d/serve")`, os.Getenv("DOMAIN"), id),
 	}
@@ -208,12 +210,14 @@ func (g *Gameserver) Stop() error {
 }
 
 type Gameservers struct {
+	version     string
 	servers     map[int]*Gameserver
 	serverAdded chan int
 }
 
-func NewGameservers() *Gameservers {
+func NewGameservers(version string) *Gameservers {
 	return &Gameservers{
+		version:     version,
 		servers:     make(map[int]*Gameserver),
 		serverAdded: make(chan int, 100),
 	}
@@ -365,7 +369,7 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	server, err := NewGameserver(id)
+	server, err := NewGameserver(gs.version, id)
 	if err != nil {
 		Log(c.InRed(fmt.Sprintf("[start] failed to start gameserver for ID %d: %s", id, err.Error())))
 		http.Error(w, "Failed to start gameserver: "+err.Error(), http.StatusInternalServerError)
@@ -497,11 +501,11 @@ func main() {
 	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
 
 	Log(c.InYellow("Checking for gameserver files..."))
-	err := LoadFromSetup()
+	ver, err := LoadFromSetup()
 	Fatal(err, c.InRed("Failed to load necessary gameserver files from Setup domain."))
 
 	Log(c.InPurple("Starting gameservers..."))
-	gameservers := NewGameservers()
+	gameservers := NewGameservers(ver)
 
 	http.HandleFunc("GET /", gameservers.listRoute)
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
