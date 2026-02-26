@@ -4,7 +4,11 @@ Proxy/Proxy.exe
 Gameserver/Gameserver
 Gameserver/Gameserver.exe
 Gameserver/places
-Gameserver/staging
+Gameserver/Versions
 .env
 RCCProxy
 RCCProxy.exe
+Orbiter/bin
+Orbiter/obj
+Orbiter/staging
+Orbiter/out

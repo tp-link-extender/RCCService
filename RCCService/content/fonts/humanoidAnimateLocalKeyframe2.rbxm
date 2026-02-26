@@ -33,63 +33,63 @@ local currentAnimSpeed = 1.0
 local animTable = {}
 local animNames = { 
 &#9;idle = &#9;{&#9;
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=180435571&quot;, weight = 9 },
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=180435792&quot;, weight = 1 }
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=180435571&quot;, weight = 9 },
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=180435792&quot;, weight = 1 }
 &#9;&#9;&#9;},
 &#9;walk = &#9;{ &#9;
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=180426354&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=180426354&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;run = &#9;{
 &#9;&#9;&#9;&#9;{ id = &quot;run.xml&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;jump = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=125750702&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125750702&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;fall = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=180436148&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=180436148&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;climb = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=180436334&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=180436334&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;sit = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=178130996&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=178130996&quot;, weight = 10 } 
 &#9;&#9;&#9;},&#9;
 &#9;toolnone = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182393478&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182393478&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;toolslash = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=129967390&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129967390&quot;, weight = 10 } 
 --&#9;&#9;&#9;&#9;{ id = &quot;slash.xml&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;toollunge = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=129967478&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129967478&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;wave = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=128777973&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=128777973&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;point = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=128853357&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=128853357&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;dance = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182435998&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182491037&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182491065&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182435998&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182491037&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182491065&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;dance2 = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182436842&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182491248&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182491277&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182436842&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182491248&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182491277&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;dance3 = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182436935&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182491368&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=182491423&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182436935&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182491368&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=182491423&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;laugh = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=129423131&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129423131&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;cheer = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.roblox.com/asset/?id=129423030&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129423030&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 }
 
@@ -555,7 +555,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX00CF3DBBF6A44ED5BBC717359071CB44">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=180435571</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=180435571</url></Content>
 					<string name="Name">Animation1</string>
 				</Properties>
 				<Item class="NumberValue" referent="RBX5B18FB5697DC46F69374CB1D7236BD8C">
@@ -567,7 +567,7 @@ end
 			</Item>
 			<Item class="Animation" referent="RBX4FDE2C9CBC2245C18F7583D18E8FA849">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=180435792</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=180435792</url></Content>
 					<string name="Name">Animation2</string>
 				</Properties>
 				<Item class="NumberValue" referent="RBX52104EA5D6A54AF19E439A7E4F5D2874">
@@ -585,7 +585,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX038BF3EC9C3E4F06B2F24E69A20F347C">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=180426354</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=180426354</url></Content>
 					<string name="Name">WalkAnim</string>
 				</Properties>
 			</Item>
@@ -597,7 +597,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX8755FB1F0AB24E028CD877AC4266F885">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=180426354</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=180426354</url></Content>
 					<string name="Name">RunAnim</string>
 				</Properties>
 			</Item>
@@ -609,7 +609,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX94F8E8E31C3B4343A24D76E4721CA64F">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=125750702</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125750702</url></Content>
 					<string name="Name">JumpAnim</string>
 				</Properties>
 			</Item>
@@ -621,7 +621,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX7CB10265BA4B4488A67823BF80A77DC0">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=180436334</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=180436334</url></Content>
 					<string name="Name">ClimbAnim</string>
 				</Properties>
 			</Item>
@@ -633,7 +633,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX8210E414C2DD416BAFD78558576B7955">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=182393478</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=182393478</url></Content>
 					<string name="Name">ToolNoneAnim</string>
 				</Properties>
 			</Item>
@@ -645,7 +645,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX9A2EC4B488454C1ABEEEF09689D5BD33">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=180436148</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=180436148</url></Content>
 					<string name="Name">FallAnim</string>
 				</Properties>
 			</Item>
@@ -657,7 +657,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX7A130B7EFF964AFDB81E41B6BF7A0FC7">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.roblox.com/asset/?id=178130996</url></Content>
+					<Content name="AnimationId"><url>http://mercs.dev/asset?id=178130996</url></Content>
 					<string name="Name">SitAnim</string>
 				</Properties>
 			</Item>

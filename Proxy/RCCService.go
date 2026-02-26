@@ -264,7 +264,7 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 	res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		Log(c.InRed(fmt.Sprintf("Server responded with status code %d", res.StatusCode)))
+		Log(c.InRed(fmt.Sprintf("Server (%s) responded with status code %d", req.URL.String(), res.StatusCode)))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
