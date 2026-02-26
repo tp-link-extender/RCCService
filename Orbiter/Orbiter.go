@@ -126,6 +126,17 @@ func LoadFromSetup() (string, error) {
 	return ver, nil
 }
 
+// this is needed on linux because Studio is a GUI application
+func StartDisplayServer() error {
+	cmd := exec.Command("Xvfb", ":0")
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start Xvfb: %w", err)
+	}
+
+	Log(c.InGreen("Display server started on :0"))
+	return nil
+}
+
 func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
 	allowedIPs := map[string]struct{}{
 		"[::1]":           {},
@@ -188,6 +199,7 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 	if runtime.GOOS != "windows" {
 		args = append([]string{"wine"}, args...)
 	}
+	// current environment is copied to new process
 	cmd := exec.Command(args[0], args[1:]...)
 
 	// set stdout
@@ -512,6 +524,12 @@ func main() {
 	Log(c.InYellow("Checking for gameserver files..."))
 	ver, err := LoadFromSetup()
 	Fatal(err, c.InRed("Failed to load necessary gameserver files from Setup domain."))
+
+	Log(c.InYellow("Starting display server..."))
+	if err := StartDisplayServer(); err != nil {
+		Log(c.InRed("Failed to start display server: " + err.Error()))
+		os.Exit(1)
+	}
 
 	Log(c.InPurple("Starting gameservers..."))
 	gameservers := NewGameservers(ver)
