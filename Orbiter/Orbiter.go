@@ -189,6 +189,11 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 		args = append([]string{"wine"}, args...)
 	}
 	cmd := exec.Command(args[0], args[1:]...)
+
+	// set stdout
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start MercuryStudioBeta.exe: %w", err)
 	}
@@ -293,7 +298,7 @@ func (gs *Gameservers) Track(server *Gameserver, id int) {
 	go TrackNetwork(server, id)
 
 	err := server.Cmd.Wait()
-	if server.Status == Closed {
+	if server.Status == Closed { // if tracked multiple times
 		return
 	}
 
