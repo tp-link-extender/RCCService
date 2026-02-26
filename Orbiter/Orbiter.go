@@ -110,7 +110,7 @@ func LoadFromSetup() (string, error) {
 
 	verbytes, err := io.ReadAll(res.Body)
 	if err != nil {
-		return  "", fmt.Errorf("read version from response body: %w", err)
+		return "", fmt.Errorf("read version from response body: %w", err)
 	}
 	res.Body.Close()
 
@@ -504,6 +504,10 @@ func servePublicStatus(gameservers *Gameservers) {
 func main() {
 	Log(c.InYellow("Loading environment variables..."))
 	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
+
+	for _, env := range os.Environ() {
+		fmt.Println(env)
+	}
 
 	Log(c.InYellow("Checking for gameserver files..."))
 	ver, err := LoadFromSetup()
