@@ -200,7 +200,7 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 	args := []string{
 		exePath,
 		"-script",
-		fmt.Sprintf(`dofile("http://%s/game/%d/serve")`, os.Getenv("DOMAIN"), id),
+		fmt.Sprintf(`dofile("http://www.%s/game/%d/serve")`, os.Getenv("DOMAIN"), id),
 	}
 	if runtime.GOOS != "windows" {
 		args = append([]string{"wine"}, args...)
