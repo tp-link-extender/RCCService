@@ -130,14 +130,17 @@ const display = ":0"
 
 // this is needed on linux because Studio is a GUI application
 func StartDisplayServer() error {
-	// TODO: Xvfb deprecated ages ago, switch to Wayland because it works with that
-	cmd := exec.Command("Xvfb", display)
+	if err := os.Setenv("DISPLAY", display); err != nil {
+		return fmt.Errorf("set DISPLAY environment variable: %w", err)
+	}
+
+	cmd := exec.Command("weston", "-B", "headless")
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start Xvfb: %w", err)
+		return fmt.Errorf("start Weston: %w", err)
 	}
 
 	Log(c.InGreen(fmt.Sprintf("Display server started on %s", display)))
-	return os.Setenv("DISPLAY", display) // ez to get err here lel
+	return nil
 }
 
 func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
@@ -528,13 +531,13 @@ func main() {
 	ver, err := LoadFromSetup()
 	Fatal(err, c.InRed("Failed to load necessary gameserver files from Setup domain."))
 
-	// if runtime.GOOS != "windows" {
-	// 	Log(c.InYellow("Starting display server..."))
-	// 	if err := StartDisplayServer(); err != nil {
-	// 		Log(c.InRed("Failed to start display server: " + err.Error()))
-	// 		os.Exit(1)
-	// 	}
-	// }
+	if runtime.GOOS != "windows" {
+		Log(c.InYellow("Starting display server..."))
+		if err := StartDisplayServer(); err != nil {
+			Log(c.InRed("Failed to start display server: " + err.Error()))
+			os.Exit(1)
+		}
+	}
 
 	Log(c.InPurple("Starting gameservers..."))
 	gameservers := NewGameservers(ver)
