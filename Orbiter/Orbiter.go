@@ -45,8 +45,8 @@ const (
 // We don't need the launcher from setup, we're just running Studio
 // (arguably we don't need the Client either, but there's gonna be so many more clients than servers it's probably worth it)
 func InstallSetup(version string) error {
-	// http request to setup.{Domain}/version/download
-	res, err := http.Get(fmt.Sprintf("https://setup.%s/%s", os.Getenv("DOMAIN"), version))
+	// http request to {SetupDomain}/version/download
+	res, err := http.Get(fmt.Sprintf("https://setup.%s/%s", os.Getenv("SETUPDOMAIN"), version))
 	if err != nil {
 		return fmt.Errorf("get version from setup: %w", err)
 	}
@@ -102,8 +102,8 @@ func InstallSetup(version string) error {
 }
 
 func LoadFromSetup() (string, error) {
-	// http request to setup.{Domain}/version
-	res, err := http.Get(fmt.Sprintf("https://setup.%s/version", os.Getenv("DOMAIN")))
+	// http request to {SetupDomain}/version
+	res, err := http.Get(fmt.Sprintf("https://%s/version", os.Getenv("SETUPDOMAIN")))
 	if err != nil {
 		return "", fmt.Errorf("get version from setup: %w", err)
 	}
@@ -118,7 +118,7 @@ func LoadFromSetup() (string, error) {
 
 	// check if ./Versions/{ver} exists
 	if _, err := os.Stat(versionPathStart + ver); errors.Is(err, os.ErrNotExist) {
-		Log(c.InPurple(fmt.Sprintf("Version %s not found, downloading from setup.%s...", ver, os.Getenv("DOMAIN"))))
+		Log(c.InPurple(fmt.Sprintf("Version %s not found, downloading from %s...", ver, os.Getenv("SETUPDOMAIN"))))
 		return ver, InstallSetup(ver)
 	}
 
@@ -528,13 +528,13 @@ func main() {
 	ver, err := LoadFromSetup()
 	Fatal(err, c.InRed("Failed to load necessary gameserver files from Setup domain."))
 
-	if runtime.GOOS != "windows" {
-		Log(c.InYellow("Starting display server..."))
-		if err := StartDisplayServer(); err != nil {
-			Log(c.InRed("Failed to start display server: " + err.Error()))
-			os.Exit(1)
-		}
-	}
+	// if runtime.GOOS != "windows" {
+	// 	Log(c.InYellow("Starting display server..."))
+	// 	if err := StartDisplayServer(); err != nil {
+	// 		Log(c.InRed("Failed to start display server: " + err.Error()))
+	// 		os.Exit(1)
+	// 	}
+	// }
 
 	Log(c.InPurple("Starting gameservers..."))
 	gameservers := NewGameservers(ver)
