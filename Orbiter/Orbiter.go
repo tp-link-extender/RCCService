@@ -206,6 +206,10 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 		args = append([]string{"wine"}, args...)
 	}
 	// current environment is copied to new process
+	for _, env := range os.Environ() {
+		fmt.Println(env)
+	}
+
 	cmd := exec.Command(args[0], args[1:]...)
 
 	// set stdout
@@ -522,10 +526,6 @@ func servePublicStatus(gameservers *Gameservers) {
 func main() {
 	Log(c.InYellow("Loading environment variables..."))
 	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
-
-	for _, env := range os.Environ() {
-		fmt.Println(env)
-	}
 
 	Log(c.InYellow("Checking for gameserver files..."))
 	ver, err := LoadFromSetup()
