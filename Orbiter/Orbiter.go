@@ -46,7 +46,7 @@ const (
 // (arguably we don't need the Client either, but there's gonna be so many more clients than servers it's probably worth it)
 func InstallSetup(version string) error {
 	// http request to {SetupDomain}/version/download
-	res, err := http.Get(fmt.Sprintf("https://setup.%s/%s", os.Getenv("SETUPDOMAIN"), version))
+	res, err := http.Get(fmt.Sprintf("https://%s/%s", os.Getenv("SETUPDOMAIN"), version))
 	if err != nil {
 		return fmt.Errorf("get version from setup: %w", err)
 	}
