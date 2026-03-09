@@ -531,13 +531,13 @@ func main() {
 	ver, err := LoadFromSetup()
 	Fatal(err, c.InRed("Failed to load necessary gameserver files from Setup domain."))
 
-	if runtime.GOOS != "windows" {
-		Log(c.InYellow("Starting display server..."))
-		if err := StartDisplayServer(); err != nil {
-			Log(c.InRed("Failed to start display server: " + err.Error()))
-			os.Exit(1)
-		}
-	}
+	// if runtime.GOOS != "windows" {
+	// 	Log(c.InYellow("Starting display server..."))
+	// 	if err := StartDisplayServer(); err != nil {
+	// 		Log(c.InRed("Failed to start display server: " + err.Error()))
+	// 		os.Exit(1)
+	// 	}
+	// }
 
 	Log(c.InPurple("Starting gameservers..."))
 	gameservers := NewGameservers(ver)
