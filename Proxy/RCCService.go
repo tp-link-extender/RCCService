@@ -29,8 +29,8 @@ import (
 	"time"
 
 	c "github.com/TwiN/go-color"
-	"github.com/kovidgoyal/imaging"
 	env "github.com/joho/godotenv"
+	"github.com/kovidgoyal/imaging"
 	. "github.com/tp-link-extender/RCCService/Shared"
 )
 
@@ -45,11 +45,13 @@ func Logr(txt string) {
 	fmt.Print("\r", time.Now().Format("2006/01/02, 15:04:05  "), txt) // fmt.Print don't add spaces between args
 }
 
+const exePath = "./RCCService/RCCService.exe"
+
 func StartRCC() {
-	_, err := os.Stat("./RCCService/RCCService.exe")
+	_, err := os.Stat(exePath)
 	Fatal(err, "RCCService.exe not found! Please place the RCCService folder in the current directory.")
 
-	args := []string{"./RCCService/RCCService.exe", "-Console"}
+	args := []string{exePath, "-Console"}
 	if runtime.GOOS != "windows" {
 		args = append([]string{"wine"}, args...)
 	}
@@ -261,7 +263,15 @@ func main() {
 	Fatal(env.Load(".env"), "Failed to load environment variables. Please place them in a .env file in the current directory.")
 
 	Log(c.InPurple("Starting RCCService..."))
-	go StartRCC()
+	go StartRCC() // takes a whiile
+
+	if runtime.GOOS != "windows" {
+		Log(c.InYellow("Starting display server..."))
+		if err := StartDisplayServer(); err != nil {
+			Log(c.InRed("Failed to start display server: " + err.Error()))
+			os.Exit(1)
+		}
+	}
 
 	loaded := false
 	// goroutines mean it'll actually do it every 100ms
