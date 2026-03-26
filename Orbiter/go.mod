@@ -1,11 +1,12 @@
 module github.com/tp-link-extender/RCCService/Orbiter
 
-go 1.25.3
+go 1.26.1
 
 require (
 	github.com/TwiN/go-color v1.4.1
 	github.com/caddyserver/certmagic v0.25.2
 	github.com/joho/godotenv v1.5.1
+	github.com/tp-link-extender/RCCService/Shared v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -28,3 +29,5 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
 )
+
+replace github.com/tp-link-extender/RCCService/Shared => ../Shared

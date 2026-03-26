@@ -29,8 +29,9 @@ import (
 	"time"
 
 	c "github.com/TwiN/go-color"
-	"github.com/disintegration/imaging" // todo: review fork https://github.com/kovidgoyal/imaging
+	"github.com/kovidgoyal/imaging"
 	env "github.com/joho/godotenv"
+	. "github.com/tp-link-extender/RCCService/Shared"
 )
 
 var (
@@ -40,23 +41,8 @@ var (
 	template string
 )
 
-func Log(txt string) {
-	// I HATE GO DATE FORMATTING!!! I HATE GO DATE FORMATTING!!!
-	fmt.Println(time.Now().Format("2006/01/02, 15:04:05 "), txt)
-}
-
 func Logr(txt string) {
 	fmt.Print("\r", time.Now().Format("2006/01/02, 15:04:05  "), txt) // fmt.Print don't add spaces between args
-}
-
-func Fatal(err error, txt string) {
-	// so that I don't have to write this every time
-	if err == nil {
-		return
-	}
-	fmt.Println(err)
-	Log(c.InRed(txt))
-	os.Exit(1)
 }
 
 func StartRCC() {
