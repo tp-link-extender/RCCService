@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	c "github.com/TwiN/go-color" // the log colours are kinda random loll whatever
@@ -129,6 +130,147 @@ func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
 	return true
 }
 
+const (
+	proto       = "udp4"
+	idleTimeout = 35 * time.Second
+)
+
+type Proxy struct {
+	Port int
+	conn *net.UDPConn
+	wg   sync.WaitGroup
+}
+
+type Session struct {
+	client *net.UDPAddr
+	gs     *net.UDPConn
+	last   time.Time
+}
+
+func proxyToClient(p *Proxy, sessKey string, sess *Session) {
+	b := make([]byte, 65535)
+	for {
+		n2, err := sess.gs.Read(b)
+		if err != nil {
+			Log(c.InYellow(fmt.Sprintf("[proxy:%d] gameserver connection closed for client %s: %v", p.Port, sessKey, err)))
+			return
+		}
+		if _, err := p.conn.WriteToUDP(b[:n2], sess.client); err != nil {
+			Log(c.InRed(fmt.Sprintf("[proxy:%d] failed to forward to client %s: %v", p.Port, sess.client.String(), err)))
+			return
+		}
+		sess.last = time.Now()
+	}
+}
+
+func runProxyOnPort(p *Proxy) {
+	gsPort := p.Port - proxyOffset
+
+	sessions := make(map[string]*Session)
+
+	// Periodic cleanup for idle sessions
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	go func() {
+		for range ticker.C {
+			now := time.Now()
+			for k, s := range sessions {
+				if now.Sub(s.last) > idleTimeout {
+					Log(c.InYellow(fmt.Sprintf("[proxy:%d] timing out session %s", p.Port, k)))
+					s.gs.Close()
+					delete(sessions, k)
+				}
+			}
+		}
+	}()
+
+	buf := make([]byte, 65535)
+	for {
+		n, clientAddr, err := p.conn.ReadFromUDP(buf)
+		if err != nil {
+			Log(c.InRed(fmt.Sprintf("[proxy:%d] read error: %v", p.Port, err)))
+			break
+		}
+
+		// only IPv4 clients are allowed (:c)
+		if clientAddr.IP.To4() == nil {
+			continue
+		}
+
+		key := clientAddr.String()
+		s, exists := sessions[key]
+
+		if !exists {
+			gsAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: gsPort}
+			gsConn, err := net.DialUDP(proto, nil, gsAddr)
+			if err != nil {
+				Log(c.InRed(fmt.Sprintf("[proxy:%d] failed to dial gameserver %s: %v", p.Port, gsAddr.String(), err)))
+				continue
+			}
+
+			s = &Session{
+				client: &net.UDPAddr{IP: clientAddr.IP, Port: clientAddr.Port},
+				gs:     gsConn,
+				last:   time.Now(),
+			}
+			sessions[key] = s
+
+			// start goroutine to read gameserver responses and forward to client
+			// go readWrite(key, s)
+			go func() {
+				proxyToClient(p, key, s)
+				s.gs.Close()
+				delete(sessions, key)
+			}()
+		}
+
+		// forward client's packet to gameserver
+		if _, err := s.gs.Write(buf[:n]); err != nil {
+			Log(c.InRed(fmt.Sprintf("[proxy:%d] failed to send to gameserver for client %s: %v", p.Port, key, err)))
+			s.gs.Close()
+			delete(sessions, key)
+			continue
+		}
+		s.last = time.Now()
+	}
+
+	// cleanup any remaining sessions (e.g. when listener is closed)
+	for k, s := range sessions {
+		Log(c.InYellow(fmt.Sprintf("[proxy:%d] closing session %s", p.Port, k)))
+		s.gs.Close()
+		delete(sessions, k)
+	}
+}
+
+func (p *Proxy) Start() error {
+	conn, err := net.ListenUDP(proto, &net.UDPAddr{IP: net.IPv4zero, Port: p.Port})
+	if err != nil {
+		return fmt.Errorf("bind proxy port %d: %w", p.Port, err)
+	}
+	p.conn = conn
+
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		runProxyOnPort(p)
+	}()
+
+	Log(c.InGreen(fmt.Sprintf("[proxy:%d] listener started", p.Port)))
+	return nil
+}
+
+func (p *Proxy) Stop() error {
+	if p.conn != nil {
+		// Closing the UDPConn will cause runProxyOnPort to exit.
+		_ = p.conn.Close()
+		p.wg.Wait()
+		p.conn = nil
+	}
+	Log(c.InYellow(fmt.Sprintf("[proxy:%d] stopped", p.Port)))
+	return nil
+}
+
 type Status uint8
 
 const (
@@ -138,7 +280,8 @@ const (
 )
 
 type GameserverInfo struct {
-	Pid           int    `json:"pid"`
+	Pid           int `json:"pid"`
+	Proxy         *Proxy
 	StartTime     int64  `json:"startTime"`
 	Status        Status `json:"status"`
 	statusChanged chan struct{}
@@ -166,6 +309,13 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 		return nil, fmt.Errorf("retrieve studio executable metadata: %w", err)
 	}
 
+	proxy := &Proxy{
+		Port: idToPort(id) + proxyOffset, // proxy port is offset from gameserver port by a fixed number
+	}
+	if err := proxy.Start(); err != nil {
+		return nil, fmt.Errorf("start proxy: %w", err)
+	}
+
 	args := []string{
 		exePath,
 		"-script",
@@ -186,12 +336,14 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
+		proxy.Stop()
 		return nil, fmt.Errorf("start MercuryStudioBeta.exe: %w", err)
 	}
 
 	return &Gameserver{
 		GameserverInfo: GameserverInfo{
 			Pid:           cmd.Process.Pid,
+			Proxy:         proxy,
 			StartTime:     time.Now().UnixMilli(),
 			Status:        Starting,
 			statusChanged: make(chan struct{}, 100),
@@ -202,6 +354,9 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 
 func (g *Gameserver) Stop() error {
 	g.SetStatus(Closed)
+	if g.Proxy != nil {
+		g.Proxy.Stop()
+	}
 	return g.Process.Kill()
 }
 
@@ -220,8 +375,6 @@ func NewGameservers(version string) *Gameservers {
 }
 
 func CheckServerUp(port int) bool {
-	const proto = "udp4"
-
 	// start a UDP server on the same port and see if it errors
 	// gee, I sure hope this never interferes with the actual server starting
 	laddr, err := net.ResolveUDPAddr(proto, fmt.Sprintf(":%d", port))
@@ -233,8 +386,10 @@ func CheckServerUp(port int) bool {
 	return false
 }
 
+const proxyOffset = 25000
+
 func idToPort(id int) int {
-	return 10000 + (id % 50000)
+	return 10000 + id%proxyOffset
 }
 
 func TrackNetwork(server *Gameserver, id int) {
@@ -500,13 +655,13 @@ func main() {
 	ver, err := LoadFromSetup()
 	Fatal(err, c.InRed("Failed to load necessary gameserver files from Setup domain."))
 
-	if runtime.GOOS != "windows" {
-		Log(c.InYellow("Starting display server..."))
-		if err := StartDisplayServer(); err != nil {
-			Log(c.InRed("Failed to start display server: " + err.Error()))
-			os.Exit(1)
-		}
-	}
+	// if runtime.GOOS != "windows" {
+	// 	Log(c.InYellow("Starting display server..."))
+	// 	if err := StartDisplayServer(); err != nil {
+	// 		Log(c.InRed("Failed to start display server: " + err.Error()))
+	// 		os.Exit(1)
+	// 	}
+	// }
 
 	Log(c.InPurple("Starting gameservers..."))
 	gameservers := NewGameservers(ver)
@@ -517,7 +672,6 @@ func main() {
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
 
 	go servePublicStatus(gameservers)
-	// the forwarder don't actually work 😭 (it seems to work normally anywayso)
 
 	Log(c.InGreen("~ Orbiter is up on port 64991 ~"))
 	if err := http.ListenAndServe(":64991", nil); err != nil {
