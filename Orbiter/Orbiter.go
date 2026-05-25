@@ -167,6 +167,13 @@ func runProxyOnPort(p *Proxy) {
 	gsPort := p.Port - proxyOffset
 
 	sessions := make(map[string]*Session)
+	var mu sync.Mutex
+
+	deleteFromSessions := func(key string) {
+		mu.Lock()
+		delete(sessions, key)
+		mu.Unlock()
+	}
 
 	// Periodic cleanup for idle sessions
 	ticker := time.NewTicker(10 * time.Second)
@@ -179,7 +186,7 @@ func runProxyOnPort(p *Proxy) {
 				if now.Sub(s.last) > idleTimeout {
 					Log(c.InYellow(fmt.Sprintf("[proxy:%d] timing out session %s", p.Port, k)))
 					s.gs.Close()
-					delete(sessions, k)
+					deleteFromSessions(k)
 				}
 			}
 		}
@@ -214,14 +221,16 @@ func runProxyOnPort(p *Proxy) {
 				gs:     gsConn,
 				last:   time.Now(),
 			}
+			mu.Lock()
 			sessions[key] = s
+			mu.Unlock()
 
 			// start goroutine to read gameserver responses and forward to client
 			// go readWrite(key, s)
 			go func() {
 				proxyToClient(p, key, s)
 				s.gs.Close()
-				delete(sessions, key)
+				deleteFromSessions(key)
 			}()
 		}
 
@@ -229,7 +238,7 @@ func runProxyOnPort(p *Proxy) {
 		if _, err := s.gs.Write(buf[:n]); err != nil {
 			Log(c.InRed(fmt.Sprintf("[proxy:%d] failed to send to gameserver for client %s: %v", p.Port, key, err)))
 			s.gs.Close()
-			delete(sessions, key)
+			deleteFromSessions(key)
 			continue
 		}
 		s.last = time.Now()
@@ -239,7 +248,7 @@ func runProxyOnPort(p *Proxy) {
 	for k, s := range sessions {
 		Log(c.InYellow(fmt.Sprintf("[proxy:%d] closing session %s", p.Port, k)))
 		s.gs.Close()
-		delete(sessions, k)
+		deleteFromSessions(k)
 	}
 }
 
