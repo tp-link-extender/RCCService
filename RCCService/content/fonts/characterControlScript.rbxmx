@@ -1,15 +1,15 @@
 <roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
 	<External>null</External>
 	<External>nil</External>
-	<Item class="LocalScript" referent="RBXCDA097EECF134E9A9DE7A8ED65B8C529">
+<Item class="LocalScript" referent="RBX45966e4432354a8391b7bc068c91e900">
 		<Properties>
 			<bool name="Disabled">false</bool>
 			<Content name="LinkedSource"><null></null></Content>
 			<string name="Name">ControlScript</string>
 			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: ControlScript.lua
-	// Version 1.0
-	// Written by: jmargh
+	// Version 1.1
+	// Written by: jmargh and jeditkacheff
 	// Description: Manages in game controls for both touch and keyboard/mouse devices.
 	
 	// This script will be inserted into PlayerScripts under each player by default. If you want to
@@ -26,6 +26,12 @@
 		MasterControl
 		VehicleController
 --]]
+
+local canUseNewControlScript = pcall(function() game:GetService('UserInputService'):GetLastInputType() end)
+local success, value = pcall(function() return UserSettings():IsUserFeatureEnabled("UserUseNewControlScript") end)
+local shouldUseNewControlScript = success and value
+
+if not canUseNewControlScript or not shouldUseNewControlScript then
 
 --[[ Services ]]--
 local ContextActionService = game:GetService('ContextActionService')
@@ -47,6 +53,7 @@ end
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild('PlayerGui')
 local IsTouchDevice = UserInputService.TouchEnabled
+local IsKeyboardDevice = UserInputService.KeyboardEnabled
 local UserMovementMode = IsTouchDevice and GameSettings.TouchMovementMode or GameSettings.ComputerMovementMode
 local DevMovementMode = IsTouchDevice and LocalPlayer.DevTouchMovementMode or LocalPlayer.DevComputerMovementMode
 local IsUserChoice = (IsTouchDevice and DevMovementMode == Enum.DevTouchMovementMode.UserChoice) or
@@ -56,6 +63,7 @@ local TouchControlFrame = nil
 local TouchJumpModule = nil
 local IsModalEnabled = UserInputService.ModalEnabled
 local BindableEvent_OnFailStateChanged = nil
+local BindableEvent_EnableTouchJump = nil
 local isJumpEnabled = false
 
 
@@ -73,7 +81,8 @@ if IsTouchDevice then
 	ControlModules.Default = ControlModules.Thumbstick
 	TouchJumpModule = require(script.MasterControl:WaitForChild('TouchJump'))
 	BindableEvent_OnFailStateChanged = script.Parent:WaitForChild('OnClickToMoveFailStateChange')
-else
+	BindableEvent_EnableTouchJump = script.Parent:WaitForChild('EnableTouchJump')
+elseif IsKeyboardDevice then
 	ControlModules.Keyboard = require(script.MasterControl:WaitForChild('KeyboardMovement'))
 end
 ControlModules.Gamepad = require(script.MasterControl:WaitForChild('Gamepad'))
@@ -145,6 +154,7 @@ if IsTouchDevice then
 				isJumpEnabled = true
 			elseif DevMovementMode == Enum.DevTouchMovementMode.DPad then
 				newModuleToEnable = ControlModules.DPad
+				isJumpEnabled = false
 			elseif DevMovementMode == Enum.DevTouchMovementMode.ClickToMove then
 				-- Managed by CameraScript
 				newModuleToEnable = nil
@@ -160,6 +170,7 @@ if IsTouchDevice then
 				isJumpEnabled = true
 			elseif UserMovementMode == Enum.TouchMovementMode.DPad then
 				newModuleToEnable = ControlModules.DPad
+				isJumpEnabled = false
 			elseif UserMovementMode == Enum.TouchMovementMode.ClickToMove then
 				-- Managed by CameraScript
 				newModuleToEnable = nil
@@ -286,6 +297,13 @@ if IsTouchDevice then
 			end
 		end
 	end)
+	BindableEvent_EnableTouchJump.Event:connect(function(enable)
+		if enable then
+			TouchJumpModule:Enable()
+		else
+			TouchJumpModule:Disable()
+		end
+	end)
 end
 
 MasterControl:Init()
@@ -293,7 +311,7 @@ onControlsChanged()
 
 -- why do I need a wait here?!?!?!? Sometimes touch controls don't disappear without this
 wait()
-if UserInputService:GetGamepadConnected(Enum.UserInputType.Gamepad1) then
+if UserInputService.GamepadEnabled then
 	if CurrentControlModule and IsTouchDevice then
 		CurrentControlModule:Disable()
 	end
@@ -303,7 +321,7 @@ if UserInputService:GetGamepadConnected(Enum.UserInputType.Gamepad1) then
 end
 
 UserInputService.GamepadDisconnected:connect(function(gamepadEnum)
-	if gamepadEnum ~= Enum.UserInputType.Gamepad1 then return end
+	if UserInputService.GamepadEnabled then return end
 	
 	if CurrentControlModule and IsTouchDevice then
 			CurrentControlModule:Enable()
@@ -324,13 +342,394 @@ UserInputService.GamepadConnected:connect(function(gamepadEnum)
 	ControlModules.Gamepad:Enable()
 end)
 
-]]></ProtectedString>
+
+
+
+-- new version of ControlScript below
+else
+	
+	
+	
+	
+	
+	
+
+--[[ Services ]]--
+local ContextActionService = game:GetService('ContextActionService')
+local Players = game:GetService('Players')
+local UserInputService = game:GetService('UserInputService')
+-- Settings and GameSettings are read only
+local Settings = UserSettings()
+local GameSettings = Settings.GameSettings
+
+-- Issue with play solo? (F6)
+while not UserInputService.KeyboardEnabled and not UserInputService.TouchEnabled and not UserInputService.GamepadEnabled do
+	wait()
+end
+
+--[[ Script Variables ]]--
+while not Players.LocalPlayer do
+	wait()
+end
+
+local lastInputType = nil
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild('PlayerGui')
+local IsTouchDevice = UserInputService.TouchEnabled
+local UserMovementMode = IsTouchDevice and GameSettings.TouchMovementMode or GameSettings.ComputerMovementMode
+local DevMovementMode = IsTouchDevice and LocalPlayer.DevTouchMovementMode or LocalPlayer.DevComputerMovementMode
+local IsUserChoice = (IsTouchDevice and DevMovementMode == Enum.DevTouchMovementMode.UserChoice) or (DevMovementMode == Enum.DevComputerMovementMode.UserChoice)
+local TouchGui = nil
+local TouchControlFrame = nil
+local IsModalEnabled = UserInputService.ModalEnabled
+local BindableEvent_OnFailStateChanged = nil
+local isJumpEnabled = false
+
+local ControlState = {}
+ControlState.Current = nil
+function ControlState:SwitchTo(newControl)
+	if ControlState.Current == newControl then return end
+	
+	if ControlState.Current then
+		ControlState.Current:Disable()
+	end
+	
+	ControlState.Current = newControl
+	
+	if ControlState.Current then
+		ControlState.Current:Enable()
+	end
+end
+
+--[[ Modules ]]--
+local ClickToMoveTouchControls = nil
+local ControlModules = {}
+
+local MasterControl = require(script:WaitForChild('MasterControl'))
+
+local ThumbstickModule = require(script.MasterControl:WaitForChild('Thumbstick'))
+local ThumbpadModule = require(script.MasterControl:WaitForChild('Thumbpad'))
+local DPadModule = require(script.MasterControl:WaitForChild('DPad'))
+local DefaultModule = ControlModules.Thumbstick
+local TouchJumpModule = require(script.MasterControl:WaitForChild('TouchJump'))
+
+local keyboardModule = require(script.MasterControl:WaitForChild('KeyboardMovement'))
+ControlModules.Gamepad = require(script.MasterControl:WaitForChild('Gamepad'))
+
+function getTouchModule()
+	local module = nil
+	if not IsUserChoice then
+		if DevMovementMode == Enum.DevTouchMovementMode.Thumbstick then
+			module = ThumbstickModule
+			isJumpEnabled = true
+		elseif DevMovementMode == Enum.DevTouchMovementMode.Thumbpad then
+			module = ThumbpadModule
+			isJumpEnabled = true
+		elseif DevMovementMode == Enum.DevTouchMovementMode.DPad then
+			module = DPadModule
+			isJumpEnabled = false
+		elseif DevMovementMode == Enum.DevTouchMovementMode.ClickToMove then
+			-- Managed by CameraScript
+			module = nil
+		elseif DevMovementMode == Enum.DevTouchMovementMode.Scriptable then
+			module = nil
+		end
+	else
+		if UserMovementMode == Enum.TouchMovementMode.Default or UserMovementMode == Enum.TouchMovementMode.Thumbstick then
+			module = ThumbstickModule
+			isJumpEnabled = true
+		elseif UserMovementMode == Enum.TouchMovementMode.Thumbpad then
+			module = ThumbpadModule
+			isJumpEnabled = true
+		elseif UserMovementMode == Enum.TouchMovementMode.DPad then
+			module = DPadModule
+			isJumpEnabled = false
+		elseif UserMovementMode == Enum.TouchMovementMode.ClickToMove then
+			-- Managed by CameraScript
+			module = nil
+		end
+	end
+	
+	return module
+end
+
+function setJumpModule(isEnabled)
+	if not isEnabled then
+		TouchJumpModule:Disable()
+	elseif ControlState.Current == ControlModules.Touch then
+		TouchJumpModule:Enable()
+	end
+end
+
+function setClickToMove()
+	if DevMovementMode == Enum.DevTouchMovementMode.ClickToMove or DevMovementMode == Enum.DevComputerMovementMode.ClickToMove or
+		UserMovementMode == Enum.ComputerMovementMode.ClickToMove or UserMovementMode == Enum.TouchMovementMode.ClickToMove then
+		--
+		if lastInputType == Enum.UserInputType.Touch then
+			ClickToMoveTouchControls = ControlState.Current
+		end
+	elseif ClickToMoveTouchControls then
+		ClickToMoveTouchControls:Disable()
+		ClickToMoveTouchControls = nil
+	end
+end
+
+ControlModules.Touch = {}
+ControlModules.Touch.Current = nil
+ControlModules.Touch.LocalPlayerChangedCon = nil
+ControlModules.Touch.GameSettingsChangedCon = nil
+
+function ControlModules.Touch:RefreshControlStyle()
+	ControlModules.Touch.Current:Disable()
+	setJumpModule(false)
+	TouchJumpModule:Disable()
+	
+	ControlModules.Touch:Enable()
+end
+function ControlModules.Touch:DisconnectEvents()
+	if ControlModules.Touch.LocalPlayerChangedCon then
+		ControlModules.Touch.LocalPlayerChangedCon:disconnect()
+		ControlModules.Touch.LocalPlayerChangedCon = nil
+	end
+	if ControlModules.Touch.GameSettingsChangedCon then
+		ControlModules.Touch.GameSettingsChangedCon:disconnect()
+		ControlModules.Touch.GameSettingsChangedCon = nil
+	end
+end
+function ControlModules.Touch:Enable()
+	DevMovementMode = LocalPlayer.DevTouchMovementMode
+	IsUserChoice = DevMovementMode == Enum.DevTouchMovementMode.UserChoice
+	if IsUserChoice then
+		UserMovementMode = GameSettings.TouchMovementMode
+	end
+		
+	local newModuleToEnable = getTouchModule()
+	if newModuleToEnable then
+		setClickToMove()
+		setJumpModule(isJumpEnabled)
+		
+		newModuleToEnable:Enable()
+		ControlModules.Touch.Current = newModuleToEnable
+
+		ControlModules.Touch:DisconnectEvents()
+		ControlModules.Touch.LocalPlayerChangedCon = LocalPlayer.Changed:connect(function(property)
+			if property == 'DevTouchMovementMode' then
+				ControlModules.Touch:RefreshControlStyle()
+			end
+		end)		
+		
+		ControlModules.Touch.GameSettingsChangedCon = GameSettings.Changed:connect(function(property)
+			if property == 'TouchMovementMode' then
+				ControlModules.Touch:RefreshControlStyle()
+			end
+		end)
+		
+		if isJumpEnabled then TouchJumpModule:Enable() end
+	end
+end
+function ControlModules.Touch:Disable()
+	ControlModules.Touch:DisconnectEvents()
+	
+	local newModuleToDisable = getTouchModule()
+	
+	if newModuleToDisable == ThumbstickModule or
+		newModuleToDisable == DPadModule or
+		newModuleToDisable == ThumbpadModule then
+			newModuleToDisable:Disable()
+			setJumpModule(false)
+			TouchJumpModule:Disable()
+	end
+end
+
+local function getKeyboardModule()
+	-- NOTE: Click to move still uses keyboard. Leaving cases in case this ever changes.
+	local whichModule = nil
+	if not IsUserChoice then
+		if DevMovementMode == Enum.DevComputerMovementMode.KeyboardMouse then
+			whichModule = keyboardModule
+		elseif DevMovementMode == Enum.DevComputerMovementMode.ClickToMove then
+			-- Managed by CameraScript
+			whichModule = keyboardModule
+		end 
+	else
+		if UserMovementMode == Enum.ComputerMovementMode.KeyboardMouse or UserMovementMode == Enum.ComputerMovementMode.Default then
+			whichModule = keyboardModule
+		elseif UserMovementMode == Enum.ComputerMovementMode.ClickToMove then
+			-- Managed by CameraScript
+			whichModule = keyboardModule
+		end
+	end
+
+	return whichModule
+end
+
+ControlModules.Keyboard = {}
+function ControlModules.Keyboard:Enable()
+	DevMovementMode = LocalPlayer.DevComputerMovementMode
+	IsUserChoice = DevMovementMode == Enum.DevComputerMovementMode.UserChoice
+	if IsUserChoice then
+		UserMovementMode = GameSettings.ComputerMovementMode
+	end
+		
+	local newModuleToEnable = getKeyboardModule()
+	if newModuleToEnable then	
+		if newModuleToEnable then
+			newModuleToEnable:Enable()
+		end
+	end
+end
+function ControlModules.Keyboard:Disable()
+	local newModuleToDisable = getKeyboardModule()
+	if newModuleToDisable then
+		newModuleToDisable:Disable()
+	end
+end
+
+if IsTouchDevice then
+	BindableEvent_OnFailStateChanged = script.Parent:WaitForChild('OnClickToMoveFailStateChange')
+end
+
+-- not used, but needs to be required
+local VehicleController = require(script.MasterControl:WaitForChild('VehicleController'))
+
+
+--[[ Initialization/Setup ]]--
+local function createTouchGuiContainer()
+	if TouchGui then TouchGui:Destroy() end
+	
+	-- Container for all touch device guis
+	TouchGui = Instance.new('ScreenGui')
+	TouchGui.Name = "TouchGui"
+	TouchGui.Parent = PlayerGui
+	
+	TouchControlFrame = Instance.new('Frame')
+	TouchControlFrame.Name = "TouchControlFrame"
+	TouchControlFrame.Size = UDim2.new(1, 0, 1, 0)
+	TouchControlFrame.BackgroundTransparency = 1
+	TouchControlFrame.Parent = TouchGui
+	
+	ThumbstickModule:Create(TouchControlFrame)
+	DPadModule:Create(TouchControlFrame)
+	ThumbpadModule:Create(TouchControlFrame)
+	TouchJumpModule:Create(TouchControlFrame)
+end
+
+--[[ Settings Changed Connections ]]--
+LocalPlayer.Changed:connect(function(property)
+	if lastInputType == Enum.UserInputType.Touch and property == 'DevTouchMovementMode' then
+		ControlState:SwitchTo(ControlModules.Touch)
+	elseif UserInputService.KeyboardEnabled and property == 'DevComputerMovementMode' then
+		ControlState:SwitchTo(ControlModules.Keyboard)
+	end
+end)
+
+GameSettings.Changed:connect(function(property)
+	if not IsUserChoice then return end
+	if property == 'TouchMovementMode' or property == 'ComputerMovementMode' then
+		UserMovementMode = GameSettings[property]
+		if property == 'TouchMovementMode' then
+			ControlState:SwitchTo(ControlModules.Touch)
+		elseif property == 'ComputerMovementMode' then
+			ControlState:SwitchTo(ControlModules.Keyboard)
+		end
+	end
+end)
+
+--[[ Touch Events ]]--
+-- On touch devices we need to recreate the guis on character load.
+local lastControlState = nil
+LocalPlayer.CharacterAdded:connect(function(character)
+	if UserInputService.TouchEnabled then
+		createTouchGuiContainer()
+	end
+	
+	if ControlState.Current == nil then
+		ControlState:SwitchTo(lastControlState)
+	end
+end)
+
+LocalPlayer.CharacterRemoving:connect(function(character)
+	lastControlState = ControlState.Current
+	ControlState:SwitchTo(nil)
+end)
+	
+UserInputService.Changed:connect(function(property)
+	if property == 'ModalEnabled' then
+		IsModalEnabled = UserInputService.ModalEnabled
+
+		if lastInputType == Enum.UserInputType.Touch then
+			if ControlState.Current == ControlModules.Touch and IsModalEnabled then
+				ControlState:SwitchTo(nil)
+			elseif ControlState.Current == nil and not IsModalEnabled then
+				ControlState:SwitchTo(ControlModules.Touch)
+			end
+		end
+	end
+end)
+
+if BindableEvent_OnFailStateChanged then
+	BindableEvent_OnFailStateChanged.Event:connect(function(isOn)
+		if lastInputType == Enum.UserInputType.Touch and ClickToMoveTouchControls then
+			if isOn then
+				ControlState:SwitchTo(ClickToMoveTouchControls)
+			else
+				ControlState:SwitchTo(nil)
+			end
+		end
+	end)
+end
+
+local switchToInputType = function(newLastInputType)
+	lastInputType = newLastInputType
+	
+	if lastInputType == Enum.UserInputType.Touch then
+				ControlState:SwitchTo(ControlModules.Touch)
+	elseif lastInputType == Enum.UserInputType.Keyboard or
+			lastInputType == Enum.UserInputType.MouseButton1 or
+			lastInputType == Enum.UserInputType.MouseButton2 or
+			lastInputType == Enum.UserInputType.MouseButton3 or
+			lastInputType == Enum.UserInputType.MouseWheel or
+			lastInputType == Enum.UserInputType.MouseMovement  then
+				ControlState:SwitchTo(ControlModules.Keyboard)
+	elseif lastInputType == Enum.UserInputType.Gamepad1 or
+			lastInputType == Enum.UserInputType.Gamepad2 or
+			lastInputType == Enum.UserInputType.Gamepad3 or
+			lastInputType == Enum.UserInputType.Gamepad4 then
+				ControlState:SwitchTo(ControlModules.Gamepad)
+	end
+end
+
+if IsTouchDevice then
+	createTouchGuiContainer()
+end
+
+MasterControl:Init()
+
+UserInputService.GamepadDisconnected:connect(function(gamepadEnum)
+	local connectedGamepads = UserInputService:GetConnectedGamepads()
+	if #connectedGamepads > 0 then return end
+	
+	if UserInputService.KeyboardEnabled then
+		ControlState:SwitchTo(ControlModules.Keyboard)
+	elseif IsTouchDevice then
+		ControlState:SwitchTo(ControlModules.Touch)
+	end
+end)
+
+UserInputService.GamepadConnected:connect(function(gamepadEnum)
+	ControlState:SwitchTo(ControlModules.Gamepad)
+end)
+
+switchToInputType(UserInputService:GetLastInputType())
+UserInputService.LastInputTypeChanged:connect(switchToInputType)
+
+end -- end of control script flag switch]]></ProtectedString>
 		</Properties>
-		<Item class="ModuleScript" referent="RBX32BC74A117AE433697E588A77C2E4619">
-			<Properties>
-				<Content name="LinkedSource"><null></null></Content>
-				<string name="Name">MasterControl</string>
-				<ProtectedString name="Source"><![CDATA[--[[
+	<Item class="ModuleScript" referent="RBX88BC9D73715D42258E60606D2C2EC7ED">
+		<Properties>
+			<Content name="LinkedSource"><null></null></Content>
+			<string name="Name">MasterControl</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: MasterControl
 	// Version 1.0
 	// Written by: jeditkacheff
@@ -342,6 +741,9 @@ local MasterControl = {}
 
 local Players = game:GetService('Players')
 local RunService = game:GetService('RunService')
+local UserInputService = game:GetService('UserInputService')
+
+local HasVRAPI = pcall(function() local _ = UserInputService.VREnabled end)
 
 while not Players.LocalPlayer do
 	wait()
@@ -387,7 +789,15 @@ function MasterControl:Init()
 				humanoid.Jump = isJumping
 			end
 			
-			moveFunc(LocalPlayer, moveValue, true)	
+			local adjustedMoveValue = moveValue
+			if HasVRAPI and UserInputService.VREnabled and workspace.CurrentCamera.HeadLocked then
+				local vrFrame = UserInputService.UserHeadCFrame
+				local lookVector = Vector3.new(vrFrame.lookVector.X, 0, vrFrame.lookVector.Z).unit
+				local rotation = CFrame.new(Vector3.new(0, 0, 0), lookVector)
+				adjustedMoveValue = rotation:vectorToWorldSpace(adjustedMoveValue)
+			end
+			
+			moveFunc(LocalPlayer, adjustedMoveValue, true)	
 		end
 	end
 	
@@ -432,13 +842,13 @@ function MasterControl:DoJump()
 end
 
 return MasterControl
+
 ]]></ProtectedString>
-			</Properties>
-			<Item class="ModuleScript" referent="RBX54AF403FDF86481C8A957949FBE7F81D">
-				<Properties>
-					<Content name="LinkedSource"><null></null></Content>
-					<string name="Name">DPad</string>
-					<ProtectedString name="Source"><![CDATA[--[[
+		</Properties>
+	<Item class="ModuleScript" referent="RBX54AF403FDF86481C8A957949FBE7F81D">
+		<Properties>
+			<string name="Name">DPad</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: DPad
 	// Version 1.0
 	// Written by: jmargh
@@ -578,6 +988,7 @@ function DPad:Create(parentFrame)
 			MasterControl:AddToPlayerMovement(-movementVector)
 			normalizeDirection(TouchObject.Position)
 			MasterControl:AddToPlayerMovement(movementVector)
+			MasterControl:SetIsJumping(false)
 		end
 	end)
 	
@@ -601,13 +1012,13 @@ end
 
 return DPad
 ]]></ProtectedString>
-				</Properties>
-			</Item>
-			<Item class="ModuleScript" referent="RBX3D4DA58BA847457EA409CCC72356F9FF">
-				<Properties>
-					<Content name="LinkedSource"><null></null></Content>
-					<string name="Name">Gamepad</string>
-					<ProtectedString name="Source"><![CDATA[--[[
+		</Properties>
+	</Item>
+<Item class="ModuleScript" referent="RBX043A8623622D44E4AE41224E69A829B8">
+		<Properties>
+			<Content name="LinkedSource"><null></null></Content>
+			<string name="Name">Gamepad</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: Gamepad
 	// Written by: jeditkacheff
 	// Description: Implements movement controls for gamepad devices (XBox, PS4, MFi, etc.)
@@ -624,6 +1035,10 @@ local StarterPlayer = game:GetService('StarterPlayer')
 local Settings = UserSettings()
 local GameSettings = Settings.GameSettings
 local currentMoveVector = Vector3.new(0,0,0)
+local activateGamepad = nil
+
+local gamepadConnectedCon = nil
+local gamepadDisconnectedCon = nil
 
 while not Players.LocalPlayer do
 	wait()
@@ -631,9 +1046,24 @@ end
 local LocalPlayer = Players.LocalPlayer
 
 --[[ Constants ]]--
-local thumbstickDeadzone = 0.14
+local thumbstickDeadzone = 0.22 --raised from 14% on 3/1/16 to accommodate looser XB360 controllers
 
-local hasCancelType = pcall(function() local test = Enum.UserInputState.Cancel end)
+function assignActivateGamepad()
+	local connectedGamepads = UserInputService:GetConnectedGamepads()
+	if #connectedGamepads > 0 then
+		for i = 1, #connectedGamepads do
+			if activateGamepad == nil then
+				activateGamepad = connectedGamepads[i]
+			elseif connectedGamepads[i].Value < activateGamepad.Value then
+				activateGamepad = connectedGamepads[i]
+			end
+		end
+	end
+	
+	if activateGamepad == nil then -- nothing is connected, at least set up for gamepad1
+		activateGamepad = Enum.UserInputType.Gamepad1
+	end
+end
 
 --[[ Public API ]]--
 function Gamepad:Enable()
@@ -645,11 +1075,11 @@ function Gamepad:Enable()
 	local moveFunc = LocalPlayer.Move
 	local gamepadSupports = UserInputService.GamepadSupports
 	
-	local controlCharacterGamepad1 = function(actionName, inputState, inputObject)
-		if inputObject.UserInputType ~= Enum.UserInputType.Gamepad1 then return end
+	local controlCharacterGamepad = function(actionName, inputState, inputObject)
+		if activateGamepad ~= inputObject.UserInputType then return end
 		if inputObject.KeyCode ~= Enum.KeyCode.Thumbstick1 then return end
 		
-		if hasCancelType and inputState == Enum.UserInputState.Cancel then
+		if inputState == Enum.UserInputState.Cancel then
 			MasterControl:AddToPlayerMovement(-currentMoveVector)
 			currentMoveVector =  Vector3.new(0,0,0)
 			return
@@ -665,11 +1095,11 @@ function Gamepad:Enable()
 		end
 	end
 	
-	local jumpCharacterGamepad1 = function(actionName, inputState, inputObject)		
-		if inputObject.UserInputType ~= Enum.UserInputType.Gamepad1 then return end
+	local jumpCharacterGamepad = function(actionName, inputState, inputObject)
+		if activateGamepad ~= inputObject.UserInputType then return end
 		if inputObject.KeyCode ~= Enum.KeyCode.ButtonA then return end
 		
-		if hasCancelType and inputState == Enum.UserInputState.Cancel then
+		if inputState == Enum.UserInputState.Cancel then
 			MasterControl:SetIsJumping(false)
 			return
 		end
@@ -677,8 +1107,8 @@ function Gamepad:Enable()
 		MasterControl:SetIsJumping(inputObject.UserInputState == Enum.UserInputState.Begin)
 	end
 	
-	local doDpadMoveUpdate = function()
-		if not gamepadSupports(UserInputService, Enum.UserInputType.Gamepad1, Enum.KeyCode.Thumbstick1) then
+	local doDpadMoveUpdate = function(userInputType)
+		if not gamepadSupports(UserInputService, userInputType, Enum.KeyCode.Thumbstick1) then
 			if LocalPlayer and LocalPlayer.Character then
 				MasterControl:AddToPlayerMovement(-currentMoveVector)
 				currentMoveVector = Vector3.new(leftValue + rightValue,0,forwardValue + backwardValue)
@@ -690,66 +1120,77 @@ function Gamepad:Enable()
 	local moveForwardFunc = function(actionName, inputState, inputObject)
 		if inputState == Enum.UserInputState.End then
 			forwardValue = -1
-		elseif inputState == Enum.UserInputState.Begin or (hasCancelType and inputState == Enum.UserInputState.Cancel) then
+		elseif inputState == Enum.UserInputState.Begin or inputState == Enum.UserInputState.Cancel then
 			forwardValue = 0
 		end
 		
-		doDpadMoveUpdate()
+		doDpadMoveUpdate(inputObject.UserInputType)
 	end
 	
 	local moveBackwardFunc = function(actionName, inputState, inputObject)	
 		if inputState == Enum.UserInputState.End then
 			backwardValue = 1
-		elseif inputState == Enum.UserInputState.Begin or (hasCancelType and inputState == Enum.UserInputState.Cancel) then
+		elseif inputState == Enum.UserInputState.Begin or inputState == Enum.UserInputState.Cancel then
 			backwardValue = 0
 		end
 		
-		doDpadMoveUpdate()
+		doDpadMoveUpdate(inputObject.UserInputType)
 	end
 	
 	local moveLeftFunc = function(actionName, inputState, inputObject)	
 		if inputState == Enum.UserInputState.End then
 			leftValue = -1
-		elseif inputState == Enum.UserInputState.Begin or (hasCancelType and inputState == Enum.UserInputState.Cancel) then
+		elseif inputState == Enum.UserInputState.Begin or inputState == Enum.UserInputState.Cancel then
 			leftValue = 0
 		end
 		
-		doDpadMoveUpdate()
+		doDpadMoveUpdate(inputObject.UserInputType)
 	end
 	
 	local moveRightFunc = function(actionName, inputState, inputObject)	
 		if inputState == Enum.UserInputState.End then
 			rightValue = 1
-		elseif inputState == Enum.UserInputState.Begin or (hasCancelType and inputState == Enum.UserInputState.Cancel) then
+		elseif inputState == Enum.UserInputState.Begin or inputState == Enum.UserInputState.Cancel then
 			rightValue = 0
 		end
 		
-		doDpadMoveUpdate()
+		doDpadMoveUpdate(inputObject.UserInputType)
 	end
 	
-	ContextActionService:BindAction("JumpButton",jumpCharacterGamepad1, false, Enum.KeyCode.ButtonA)
-	ContextActionService:BindAction("MoveThumbstick",controlCharacterGamepad1, false, Enum.KeyCode.Thumbstick1)
+	local function setActivateGamepad()
+		if activateGamepad then
+			ContextActionService:UnbindActivate(activateGamepad, Enum.KeyCode.ButtonR2)
+		end
+		assignActivateGamepad()
+		if activateGamepad then
+			ContextActionService:BindActivate(activateGamepad, Enum.KeyCode.ButtonR2)
+		end
+	end
+	
+	ContextActionService:BindAction("JumpButton",jumpCharacterGamepad, false, Enum.KeyCode.ButtonA)
+	ContextActionService:BindAction("MoveThumbstick",controlCharacterGamepad, false, Enum.KeyCode.Thumbstick1)
 	
 	ContextActionService:BindAction("forwardDpad", moveForwardFunc, false, Enum.KeyCode.DPadUp)
 	ContextActionService:BindAction("backwardDpad", moveBackwardFunc, false, Enum.KeyCode.DPadDown)
 	ContextActionService:BindAction("leftDpad", moveLeftFunc, false, Enum.KeyCode.DPadLeft)
 	ContextActionService:BindAction("rightDpad", moveRightFunc, false, Enum.KeyCode.DPadRight)
 	
-	ContextActionService:BindActivate(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonR2)
+	setActivateGamepad()
 	
-	
-	UserInputService.GamepadDisconnected:connect(function(gamepadEnum)
-		if gamepadEnum ~= Enum.UserInputType.Gamepad1 then return end
+	gamepadConnectedCon = UserInputService.GamepadDisconnected:connect(function(gamepadEnum)
+		if activateGamepad ~= gamepadEnum then return end
 		
 		MasterControl:AddToPlayerMovement(-currentMoveVector)
 		currentMoveVector = Vector3.new(0,0,0)
+		
+		activateGamepad = nil
+		setActivateGamepad()
 	end)
 
-	UserInputService.GamepadConnected:connect(function(gamepadEnum)
-		if gamepadEnum ~= Enum.UserInputType.Gamepad1 then return end
-		
-		MasterControl:AddToPlayerMovement(-currentMoveVector)
-		currentMoveVector = Vector3.new(0,0,0)
+	gamepadDisconnectedCon = UserInputService.GamepadConnected:connect(function(gamepadEnum)
+		if activateGamepad == nil then 
+			setActivateGamepad()
+		end
 	end)
 end
 
@@ -762,21 +1203,26 @@ function Gamepad:Disable()
 	
 	ContextActionService:UnbindAction("MoveThumbstick")
 	ContextActionService:UnbindAction("JumpButton")
-	ContextActionService:UnbindActivate(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonR2)
+	ContextActionService:UnbindActivate(activateGamepad, Enum.KeyCode.ButtonR2)
 	
+	if gamepadConnectedCon then gamepadConnectedCon:disconnect() end
+	if gamepadDisconnectedCon then gamepadDisconnectedCon:disconnect() end
+	
+	activateGamepad = nil
 	MasterControl:AddToPlayerMovement(-currentMoveVector)
 	currentMoveVector = Vector3.new(0,0,0)
+	MasterControl:SetIsJumping(false)
 end
 
 return Gamepad
 ]]></ProtectedString>
-				</Properties>
-			</Item>
-			<Item class="ModuleScript" referent="RBXB4C4411EA2734CFF9A6656AB6AFB7FDC">
-				<Properties>
-					<Content name="LinkedSource"><null></null></Content>
-					<string name="Name">KeyboardMovement</string>
-					<ProtectedString name="Source"><![CDATA[--[[
+		</Properties>
+	</Item>
+<Item class="ModuleScript" referent="RBXB4C4411EA2734CFF9A6656AB6AFB7FDC">
+		<Properties>
+			<Content name="LinkedSource"><null></null></Content>
+			<string name="Name">KeyboardMovement</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: ComputerMovementKeyboardMovement
 	// Version 1.2
 	// Written by: jeditkacheff/jmargh
@@ -833,19 +1279,24 @@ function KeyboardMovement:Enable()
 	local leftValue = 0
 	local rightValue = 0
 	
-	local updateMovement = function()
-		MasterControl:AddToPlayerMovement(-currentMoveVector)
-		currentMoveVector = Vector3.new(leftValue + rightValue,0,forwardValue + backwardValue)
-		MasterControl:AddToPlayerMovement(currentMoveVector)
+	local updateMovement = function(inputState)
+		if inputState == Enum.UserInputState.Cancel then
+			MasterControl:AddToPlayerMovement(-currentMoveVector)
+			currentMoveVector = Vector3.new(0, 0, 0)
+		else
+			MasterControl:AddToPlayerMovement(-currentMoveVector)
+			currentMoveVector = Vector3.new(leftValue + rightValue,0,forwardValue + backwardValue)
+			MasterControl:AddToPlayerMovement(currentMoveVector)	
+		end
 	end
 	
-	local moveForwardFunc = function(actionName, inputState, inputObject)
+	local moveForwardFunc = function(actionName, inputState, inputObject)			
 		if inputState == Enum.UserInputState.Begin then
 			forwardValue = -1
 		elseif inputState == Enum.UserInputState.End then
 			forwardValue = 0
 		end
-		updateMovement()
+		updateMovement(inputState)
 	end
 	
 	local moveBackwardFunc = function(actionName, inputState, inputObject)	
@@ -854,7 +1305,7 @@ function KeyboardMovement:Enable()
 		elseif inputState == Enum.UserInputState.End then
 			backwardValue = 0
 		end
-		updateMovement()
+		updateMovement(inputState)
 	end
 	
 	local moveLeftFunc = function(actionName, inputState, inputObject)	
@@ -863,7 +1314,7 @@ function KeyboardMovement:Enable()
 		elseif inputState == Enum.UserInputState.End then
 			leftValue = 0
 		end
-		updateMovement()
+		updateMovement(inputState)
 	end
 	
 	local moveRightFunc = function(actionName, inputState, inputObject)	
@@ -872,7 +1323,7 @@ function KeyboardMovement:Enable()
 		elseif inputState == Enum.UserInputState.End then
 			rightValue = 0
 		end
-		updateMovement()
+		updateMovement(inputState)
 	end
 	
 	local jumpFunc = function(actionName, inputState, inputObject)
@@ -942,17 +1393,17 @@ function KeyboardMovement:Disable()
 	
 	MasterControl:AddToPlayerMovement(-currentMoveVector)
 	currentMoveVector = Vector3.new(0,0,0)
+	MasterControl:SetIsJumping(false)
 end
 
 return KeyboardMovement
 ]]></ProtectedString>
-				</Properties>
-			</Item>
-			<Item class="ModuleScript" referent="RBX1E3E090B922241488CF1527B6A17D7C7">
-				<Properties>
-					<Content name="LinkedSource"><null></null></Content>
-					<string name="Name">Thumbpad</string>
-					<ProtectedString name="Source"><![CDATA[--[[
+		</Properties>
+	</Item>
+<Item class="ModuleScript" referent="RBX1E3E090B922241488CF1527B6A17D7C7">
+		<Properties>
+			<string name="Name">Thumbpad</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: Thumbpad
 	// Version 1.0
 	// Written by: jmargh
@@ -1148,6 +1599,7 @@ function Thumbpad:Create(parentFrame)
 	OnInputEnded = function()
 		MasterControl:AddToPlayerMovement(-currentMoveVector)
 		currentMoveVector = Vector3.new(0,0,0)
+		MasterControl:SetIsJumping(false)
 
 		ThumbpadFrame.Position = position
 		TouchObject = nil
@@ -1169,13 +1621,13 @@ end
 
 return Thumbpad
 ]]></ProtectedString>
-				</Properties>
-			</Item>
-			<Item class="ModuleScript" referent="RBX4085E7D84B9F4D049BA1EB9C1D13F5D2">
-				<Properties>
-					<Content name="LinkedSource"><null></null></Content>
-					<string name="Name">Thumbstick</string>
-					<ProtectedString name="Source"><![CDATA[--[[
+		</Properties>
+	</Item>
+<Item class="ModuleScript" referent="RBX4085E7D84B9F4D049BA1EB9C1D13F5D2">
+		<Properties>
+			<Content name="LinkedSource"><null></null></Content>
+			<string name="Name">Thumbstick</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: Thumbstick
 	// Version 1.0
 	// Written by: jmargh
@@ -1192,7 +1644,7 @@ while not Players.LocalPlayer do
 	wait()
 end
 local LocalPlayer = Players.LocalPlayer
-local IsFollowStick = true
+local IsFollowStick = false
 local ThumbstickFrame = nil
 local MoveTouchObject = nil
 local OnTouchEnded = nil		-- defined in Create()
@@ -1329,6 +1781,7 @@ function Thumbstick:Create(parentFrame)
 		
 		MasterControl:AddToPlayerMovement(-currentMoveVector)
 		currentMoveVector = Vector3.new(0,0,0)
+		MasterControl:SetIsJumping(false)
 	end
 	
 	OnTouchEndedCn = UserInputService.TouchEnded:connect(function(inputObject, isProcessed)
@@ -1342,13 +1795,12 @@ end
 
 return Thumbstick
 ]]></ProtectedString>
-				</Properties>
-			</Item>
-			<Item class="ModuleScript" referent="RBXD76DF8ABD3DC4228B34596375A6D3BCC">
-				<Properties>
-					<Content name="LinkedSource"><null></null></Content>
-					<string name="Name">TouchJump</string>
-					<ProtectedString name="Source"><![CDATA[--[[
+		</Properties>
+	</Item>
+<Item class="ModuleScript" referent="RBXD76DF8ABD3DC4228B34596375A6D3BCC">
+		<Properties>
+			<string name="Name">TouchJump</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: TouchJump
 	// Version 1.0
 	// Written by: jmargh
@@ -1430,13 +1882,13 @@ end
 
 return TouchJump
 ]]></ProtectedString>
-				</Properties>
-			</Item>
-			<Item class="ModuleScript" referent="RBX897F449FE4DD4FC9A5138C94EA70571C">
-				<Properties>
-					<Content name="LinkedSource"><null></null></Content>
-					<string name="Name">VehicleController</string>
-					<ProtectedString name="Source"><![CDATA[--[[
+		</Properties>
+	</Item>
+<Item class="ModuleScript" referent="RBXB523CD8AA51D47C9AD19485522A7C634">
+		<Properties>
+			<Content name="LinkedSource"><null></null></Content>
+			<string name="Name">VehicleController</string>
+			<ProtectedString name="Source"><![CDATA[--[[
 	// FileName: VehicleControl
 	// Version 1.0
 	// Written by: jmargh
@@ -1460,10 +1912,13 @@ end
 local LocalPlayer = Players.LocalPlayer
 local CurrentVehicleSeat = nil
 local CurrentThrottle = 0
+local CurrentSteer = 0
 local HumanoidSeatedCn = nil
 local RenderSteppedCn = nil
 local Accelerating = false
 local Deccelerating = false
+local TurningRight = false
+local TurningLeft = false
 -- Set this to true if you want to instead use the triggers for the throttle
 local useTriggersForThrottle = true
 -- Also set this to true if you want the thumbstick to not affect throttle, only triggers when a gamepad is conected
@@ -1488,6 +1943,28 @@ local function onThrottleDeccel(actionName, inputState, inputObject)
 	if (inputState == Enum.UserInputState.End) and Accelerating then
 		CurrentThrottle = -1
 		MasterControl:AddToPlayerMovement(Vector3.new(0, 0, CurrentThrottle))
+	end
+end
+
+local function onSteerRight(actionName, inputState, inputObject)
+	MasterControl:AddToPlayerMovement(Vector3.new(-CurrentSteer, 0, 0))
+	CurrentSteer = (inputState == Enum.UserInputState.End or TurningLeft) and 0 or 1
+	MasterControl:AddToPlayerMovement(Vector3.new(CurrentSteer, 0, 0))
+	TurningRight = not (inputState == Enum.UserInputState.End)
+	if (inputState == Enum.UserInputState.End) and TurningLeft then
+		CurrentSteer = -1
+		MasterControl:AddToPlayerMovement(Vector3.new(CurrentSteer, 0, 0))
+	end
+end
+
+local function onSteerLeft(actionName, inputState, inputObject)
+	MasterControl:AddToPlayerMovement(Vector3.new(-CurrentSteer, 0, 0))
+	CurrentSteer = (inputState == Enum.UserInputState.End or TurningRight) and 0 or -1
+	MasterControl:AddToPlayerMovement(Vector3.new(CurrentSteer, 0, 0))
+	TurningLeft = not (inputState == Enum.UserInputState.End)
+	if (inputState == Enum.UserInputState.End) and TurningRight then
+		CurrentSteer = 1
+		MasterControl:AddToPlayerMovement(Vector3.new(CurrentSteer, 0, 0))
 	end
 end
 
@@ -1531,6 +2008,8 @@ local function onSeated(active, currentSeatPart)
 				ContextActionService:BindAction("throttleAccel", onThrottleAccel, false, Enum.KeyCode.ButtonR2)
 				ContextActionService:BindAction("throttleDeccel", onThrottleDeccel, false, Enum.KeyCode.ButtonL2)
 			end
+			ContextActionService:BindAction("arrowSteerRight", onSteerRight, false, Enum.KeyCode.Right)
+			ContextActionService:BindAction("arrowSteerLeft", onSteerLeft, false, Enum.KeyCode.Left)
 			local success = pcall(function() RunService:BindToRenderStep("VehicleControlStep", Enum.RenderPriority.Input.Value, onRenderStepped) end)
 
 			if not success then
@@ -1544,8 +2023,11 @@ local function onSeated(active, currentSeatPart)
 			ContextActionService:UnbindAction("throttleAccel")
 			ContextActionService:UnbindAction("throttleDeccel")
 		end
-		MasterControl:AddToPlayerMovement(Vector3.new(0, 0, -CurrentThrottle))
+		ContextActionService:UnbindAction("arrowSteerRight")
+		ContextActionService:UnbindAction("arrowSteerLeft")
+		MasterControl:AddToPlayerMovement(Vector3.new(-CurrentSteer, 0, -CurrentThrottle))
 		CurrentThrottle = 0
+		CurrentSteer = 0
 		local success = pcall(function() RunService:UnbindFromRenderStep("VehicleControlStep") end)
 		if not success and RenderSteppedCn then
 			RenderSteppedCn:disconnect()
@@ -1575,8 +2057,8 @@ LocalPlayer.CharacterAdded:connect(CharacterAdded)
 
 return VehicleController
 ]]></ProtectedString>
-				</Properties>
-			</Item>
-		</Item>
+		</Properties>
 	</Item>
+</Item>
+</Item>
 </roblox>

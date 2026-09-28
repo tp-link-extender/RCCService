@@ -199,7 +199,7 @@ float4 AdornAALinePS(AALineVertexOutput IN): COLOR0
     result *= Color;
 
     // convert to sRGB, its not perfect for non-black backgrounds, but its the best we can get
-    result.a = pow(1 - result.a, 1/2.2);
+    result.a = pow( saturate(1 - result.a), 1/2.2);
     result.a = 1 - result.a;
 
     result.rgb = lerp(G(FogColor), result.rgb, saturate(IN.FogFactor));

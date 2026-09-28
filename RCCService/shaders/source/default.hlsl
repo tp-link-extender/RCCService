@@ -120,7 +120,7 @@ VertexOutput DefaultVS(Appdata IN, out float4 HPosition: POSITION)
         OUT.Diffuse_Specular = float4(diffuse, lt.y * specularIntensity);
     #endif
 
-    OUT.PosLightSpace_Reflectance.xyz = getPosInLightSpace(posWorld);
+    OUT.PosLightSpace_Reflectance.xyz = shadowPrepareSample(posWorld);
 
 	return OUT;
 }
@@ -172,12 +172,17 @@ TEX_DECLARE2D(StudsMap, 0);
 LGRID_SAMPLER(LightMap, 1);
 TEX_DECLARE2D(LightMapLookup, 2);
 
-TEX_DECLARE2D(DiffuseMap, 3);
-TEX_DECLARE2D(NormalMap, 4);
-TEX_DECLARECUBE(EnvironmentMap, 5);
+TEX_DECLARE2D(ShadowMap, 3);
 
-TEX_DECLARE2D(SpecularMap, 6);
-TEX_DECLARE2D(NormalDetailMap, 7);
+TEX_DECLARECUBE(EnvironmentMap, 4);
+
+TEX_DECLARE2D(DiffuseMap, 5);
+TEX_DECLARE2D(NormalMap, 6);
+TEX_DECLARE2D(SpecularMap, 7);
+
+#ifndef GLSLES
+TEX_DECLARE2D(NormalDetailMap, 8);
+#endif
 
 uniform float4 LqmatFarTilingFactor; // material tiling factor for low-quality shader, must be the same as CFG_FAR_TILING
 
@@ -203,7 +208,7 @@ float4 sampleWangSimple(TEXTURE_IN_2D(s), float2 uv)
 {
     float2 wangUv;
     float4 wangUVDerivatives;
-    getWang(TEXTURE(NormalDetailMap), uv, 1, wangUv, wangUVDerivatives);
+    getWang(TEXTURE_WANG(NormalDetailMap), uv, 1, wangUv, wangUVDerivatives);
     return sampleWang(TEXTURE(s), wangUv, wangUVDerivatives);
 }
 #endif
@@ -253,7 +258,7 @@ void DefaultPS(VertexOutput IN,
 #else
     #ifdef PIN_PLASTIC
         float4 studs = tex2D(StudsMap, IN.UvStuds_EdgeDistance2.xy);
-        float4 albedo = float4(IN.Color.rgb * 2 * studs.rgb, IN.Color.a);
+        float4 albedo = float4(IN.Color.rgb * (studs.r * 2), IN.Color.a);
 	#else
         float4 albedo = tex2D(DiffuseMap, IN.Uv_EdgeDistance1.xy) * IN.Color;
 	#endif
@@ -275,6 +280,7 @@ void DefaultPS(VertexOutput IN,
 #endif
 
     float4 light = lgridSample(TEXTURE(LightMap), TEXTURE(LightMapLookup), IN.LightPosition_Fog.xyz);
+	float shadow = shadowSample(TEXTURE(ShadowMap), IN.PosLightSpace_Reflectance.xyz, light.a);
 
     // Compute reflection term
 #if defined(PIN_SURFACE) || defined(PIN_REFLECTION)
@@ -283,8 +289,6 @@ void DefaultPS(VertexOutput IN,
     albedo.rgb = lerp(albedo.rgb, reflection.rgb, reflectance);
 #endif
     
-    float shadow = getBlobShadow(IN.PosLightSpace_Reflectance.xyz) * light.a;
-
     // Compute diffuse term
     float3 diffuse = (G(AmbientColor) + diffuseIntensity * shadow + light.rgb) * albedo.rgb;
 

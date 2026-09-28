@@ -12,8 +12,6 @@ struct Globals
     float3 AmbientColor;
     float3 Lamp0Color;
     float3 Lamp0Dir;
-    float3 Lamp0Right;
-    float3 Lamp0Up;
     float3 Lamp1Color;
 
     float3 FogColor;
@@ -28,10 +26,9 @@ struct Globals
     float4 FadeDistance_GlowFactor;
     float4 OutlineBrightness_ShadowInfo;
 
-    float4 BlobShadowData0;
-    float4 BlobShadowData1;
-    float4 BlobShadowData2;
-    float4 BlobShadowData3;
+	float4 ShadowMatrix0;
+	float4 ShadowMatrix1;
+	float4 ShadowMatrix2;
 #ifndef GLSL
 };
 

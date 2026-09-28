@@ -58,12 +58,13 @@ float4 axis_angle( float3 axis, float angle )
 
 VS_OUTPUT vs( VS_INPUT input )
 {
-	VS_OUTPUT o;
+	VS_OUTPUT o; 
 	
-	float4 pos  = float4( input.pos.xyz, 1 );
+	float4 pos  = float4( input.pos.xyz, 1 ); 
 	float2 disp = input.disp.xy * 2 - 1; // -1..1
 
-	float4 scaleRotLifeFlt = (float4)input.scaleRotLife * float4( 1.0/256.0f, 1.0/256.0f, 2.0 * 3.1415926f / 32767.0, 1.0 / 32767.0f );
+	float4 scaleRotLifeFlt = (float4)input.scaleRotLife * float4( 1.0f/256.0f, 1.0f/256.0f, 2.0 * 3.1415926f / 32767.0f, 1.0f / 32767.0f );
+    scaleRotLifeFlt.xy += 127.0f; 
 	
 	float4 rs = rotScale( scaleRotLifeFlt );
 
@@ -198,7 +199,8 @@ VS_OUTPUT2 vsCustom( VS_INPUT2 input )
 	float2 disp = input.disp.xy * 2 - 1; // -1..1
 
 	float4 scaleRotLifeFlt = (float4)input.scaleRotLife * float4( 1.0/256.0f, 1.0/256.0f, 2.0 * 3.1415926f / 32767.0, 1.0 / 32767.0f );
-	
+    scaleRotLifeFlt.xy += 127.0f; 
+
 	float4 rs = rotScale( scaleRotLifeFlt );
 
 	pos += G(ViewRight) * dot( disp, rs.xy );

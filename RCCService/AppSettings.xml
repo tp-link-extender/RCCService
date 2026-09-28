@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Settings>
-	<ContentFolder>content</ContentFolder>
-	<BaseUrl>http://www.roblox.com</BaseUrl>
+  <BaseUrl>http://www.mercs.dev</BaseUrl>
+  <ContentFolder>content</ContentFolder>
+  <SilentCrashReport>1</SilentCrashReport>
+  <cBQ4U>1</cBQ4U>
+  <xqsd5>../Lua/</xqsd5>
+  <IsScriptAssetUploadEnabled>1</IsScriptAssetUploadEnabled>
+  <IsAnimationAssetUploadEnabled>1</IsAnimationAssetUploadEnabled>
+  <IsImageModelAssetUploadEnabled>1</IsImageModelAssetUploadEnabled>
 </Settings>

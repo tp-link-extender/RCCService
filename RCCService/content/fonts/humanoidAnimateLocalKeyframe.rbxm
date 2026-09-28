@@ -1,12 +1,12 @@
 <roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
 	<External>null</External>
 	<External>nil</External>
-	<Item class="LocalScript" referent="RBX715229BE23804EB781837156DFCBE808">
+	<Item class="LocalScript" referent="RBX0">
 		<Properties>
 			<bool name="Disabled">false</bool>
 			<Content name="LinkedSource"><null></null></Content>
 			<string name="Name">Animate</string>
-			<ProtectedString name="Source">function   waitForChild(parent, childName)
+			<ProtectedString name="Source">function waitForChild(parent, childName)
 &#9;local child = parent:findFirstChild(childName)
 &#9;if child then return child end
 &#9;while true do
@@ -28,109 +28,86 @@ local pose = &quot;Standing&quot;
 local currentAnim = &quot;&quot;
 local currentAnimTrack = nil
 local currentAnimKeyframeHandler = nil
-local currentAnimSpeed = 1.0
+local oldAnimTrack = nil
 local animTable = {}
 local animNames = { 
 &#9;idle = &#9;{&#9;
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125750544&quot;, weight = 9 },
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125750618&quot;, weight = 1 }
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750544&quot;, weight = 9 },
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750618&quot;, weight = 1 }
 &#9;&#9;&#9;},
 &#9;walk = &#9;{ &#9;
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125749145&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=428005059&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;run = &#9;{
 &#9;&#9;&#9;&#9;{ id = &quot;run.xml&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;jump = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125750702&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750702&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;fall = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125750759&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750759&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;climb = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125750800&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750800&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
-&#9;sit = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=178130996&quot;, weight = 10 } 
-&#9;&#9;&#9;},&#9;
 &#9;toolnone = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=125750867&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750867&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;toolslash = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129967390&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=129967390&quot;, weight = 10 } 
 --&#9;&#9;&#9;&#9;{ id = &quot;slash.xml&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;toollunge = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129967478&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=129967478&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;wave = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=128777973&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=128777973&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;point = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=128853357&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=128853357&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;dance = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=130018893&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=132546839&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=132546884&quot;, weight = 10 } 
-&#9;&#9;&#9;},
-&#9;dance2 = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=160934142&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=160934298&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=160934376&quot;, weight = 10 } 
-&#9;&#9;&#9;},
-&#9;dance3 = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=160934458&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=160934530&quot;, weight = 10 }, 
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=160934593&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=130018893&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=132546839&quot;, weight = 10 }, 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=132546884&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;laugh = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129423131&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=129423131&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;cheer = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://mercs.dev/asset?id=129423030&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=129423030&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 }
 
 -- Existance in this list signifies that it is an emote, the value indicates if it is a looping emote
-local emoteNames = { wave = false, point = false, dance = true, dance2 = true, dance3 = true, laugh = false, cheer = false}
+local emoteNames = { wave = false, point = false, dance = true, laugh = false, cheer = false}
 
 math.randomseed(tick())
 
-function configureAnimationSet(name, fileList)
-&#9;if (animTable[name] ~= nil) then
-&#9;&#9;for _, connection in pairs(animTable[name].connections) do
-&#9;&#9;&#9;connection:disconnect()
-&#9;&#9;end
-&#9;end
+-- Setup animation objects
+for name, fileList in pairs(animNames) do 
 &#9;animTable[name] = {}
 &#9;animTable[name].count = 0
-&#9;animTable[name].totalWeight = 0&#9;
-&#9;animTable[name].connections = {}
+&#9;animTable[name].totalWeight = 0
 
 &#9;-- check for config values
 &#9;local config = script:FindFirstChild(name)
 &#9;if (config ~= nil) then
 --&#9;&#9;print(&quot;Loading anims &quot; .. name)
-&#9;&#9;table.insert(animTable[name].connections, config.ChildAdded:connect(function(child) configureAnimationSet(name, fileList) end))
-&#9;&#9;table.insert(animTable[name].connections, config.ChildRemoved:connect(function(child) configureAnimationSet(name, fileList) end))
 &#9;&#9;local idx = 1
 &#9;&#9;for _, childPart in pairs(config:GetChildren()) do
-&#9;&#9;&#9;if (childPart:IsA(&quot;Animation&quot;)) then
-&#9;&#9;&#9;&#9;table.insert(animTable[name].connections, childPart.Changed:connect(function(property) configureAnimationSet(name, fileList) end))
-&#9;&#9;&#9;&#9;animTable[name][idx] = {}
-&#9;&#9;&#9;&#9;animTable[name][idx].anim = childPart
-&#9;&#9;&#9;&#9;local weightObject = childPart:FindFirstChild(&quot;Weight&quot;)
-&#9;&#9;&#9;&#9;if (weightObject == nil) then
-&#9;&#9;&#9;&#9;&#9;animTable[name][idx].weight = 1
-&#9;&#9;&#9;&#9;else
-&#9;&#9;&#9;&#9;&#9;animTable[name][idx].weight = weightObject.Value
-&#9;&#9;&#9;&#9;end
-&#9;&#9;&#9;&#9;animTable[name].count = animTable[name].count + 1
-&#9;&#9;&#9;&#9;animTable[name].totalWeight = animTable[name].totalWeight + animTable[name][idx].weight
-&#9;--&#9;&#9;&#9;print(name .. &quot; [&quot; .. idx .. &quot;] &quot; .. animTable[name][idx].anim.AnimationId .. &quot; (&quot; .. animTable[name][idx].weight .. &quot;)&quot;)
-&#9;&#9;&#9;&#9;idx = idx + 1
+&#9;&#9;&#9;animTable[name][idx] = {}
+&#9;&#9;&#9;animTable[name][idx].anim = childPart
+&#9;&#9;&#9;local weightObject = childPart:FindFirstChild(&quot;Weight&quot;)
+&#9;&#9;&#9;if (weightObject == nil) then
+&#9;&#9;&#9;&#9;animTable[name][idx].weight = 1
+&#9;&#9;&#9;else
+&#9;&#9;&#9;&#9;animTable[name][idx].weight = weightObject.Value
 &#9;&#9;&#9;end
+&#9;&#9;&#9;animTable[name].count = animTable[name].count + 1
+&#9;&#9;&#9;animTable[name].totalWeight = animTable[name].totalWeight + animTable[name][idx].weight
+--&#9;&#9;&#9;print(name .. &quot; [&quot; .. idx .. &quot;] &quot; .. animTable[name][idx].anim.AnimationId .. &quot; (&quot; .. animTable[name][idx].weight .. &quot;)&quot;)
+&#9;&#9;&#9;idx = idx + 1
 &#9;&#9;end
 &#9;end
 
@@ -149,22 +126,6 @@ function configureAnimationSet(name, fileList)
 &#9;end
 end
 
--- Setup animation objects
-function scriptChildModified(child)
-&#9;local fileList = animNames[child.Name]
-&#9;if (fileList ~= nil) then
-&#9;&#9;configureAnimationSet(child.Name, fileList)
-&#9;end&#9;
-end
-
-script.ChildAdded:connect(scriptChildModified)
-script.ChildRemoved:connect(scriptChildModified)
-
-
-for name, fileList in pairs(animNames) do 
-&#9;configureAnimationSet(name, fileList)
-end&#9;
-
 -- ANIMATION
 
 -- declarations
@@ -172,10 +133,10 @@ local toolAnim = &quot;None&quot;
 local toolAnimTime = 0
 
 local jumpAnimTime = 0
-local jumpAnimDuration = 0.3
+local jumpAnimDuration = 0.175
 
 local toolTransitionTime = 0.1
-local fallTransitionTime = 0.3
+local fallTransitionTime = 0.2
 local jumpMaxLimbVelocity = 0.75
 
 -- functions
@@ -193,6 +154,11 @@ function stopAllAnimations()
 &#9;&#9;currentAnimKeyframeHandler:disconnect()
 &#9;end
 
+&#9;if (oldAnimTrack ~= nil) then
+&#9;&#9;oldAnimTrack:Stop()
+&#9;&#9;oldAnimTrack:Destroy()
+&#9;&#9;oldAnimTrack = nil
+&#9;end
 &#9;if (currentAnimTrack ~= nil) then
 &#9;&#9;currentAnimTrack:Stop()
 &#9;&#9;currentAnimTrack:Destroy()
@@ -201,34 +167,23 @@ function stopAllAnimations()
 &#9;return oldAnim
 end
 
-function setAnimationSpeed(speed)
-&#9;if speed ~= currentAnimSpeed then
-&#9;&#9;currentAnimSpeed = speed
-&#9;&#9;currentAnimTrack:AdjustSpeed(currentAnimSpeed)
-&#9;end
-end
-
 function keyFrameReachedFunc(frameName)
 &#9;if (frameName == &quot;End&quot;) then
 --&#9;&#9;print(&quot;Keyframe : &quot;.. frameName)
 &#9;&#9;local repeatAnim = stopAllAnimations()
-&#9;&#9;local animSpeed = currentAnimSpeed
 &#9;&#9;playAnimation(repeatAnim, 0.0, Humanoid)
-&#9;&#9;setAnimationSpeed(animSpeed)
 &#9;end
 end
 
 -- Preload animations
 function playAnimation(animName, transitionTime, humanoid)
-&#9;local idleFromEmote = (animName == &quot;idle&quot; and emoteNames[currentAnim] ~= nil)
-&#9;if (animName ~= currentAnim and not idleFromEmote) then&#9;&#9; 
+&#9;if (animName ~= currentAnim) then&#9;&#9; 
 &#9;&#9;
-&#9;&#9;if (currentAnimTrack ~= nil) then
-&#9;&#9;&#9;currentAnimTrack:Stop(transitionTime)
-&#9;&#9;&#9;currentAnimTrack:Destroy()
+&#9;&#9;if (oldAnimTrack ~= nil) then
+&#9;&#9;&#9;oldAnimTrack:Stop()
+&#9;&#9;&#9;oldAnimTrack:Destroy()
 &#9;&#9;end
 
-&#9;&#9;currentAnimSpeed = 1.0
 &#9;&#9;local roll = math.random(1, animTable[animName].totalWeight) 
 &#9;&#9;local origRoll = roll
 &#9;&#9;local idx = 1
@@ -240,6 +195,7 @@ function playAnimation(animName, transitionTime, humanoid)
 &#9;&#9;local anim = animTable[animName][idx].anim
 
 &#9;&#9;-- load it to the humanoid; get AnimationTrack
+&#9;&#9;oldAnimTrack = currentAnimTrack
 &#9;&#9;currentAnimTrack = humanoid:LoadAnimation(anim)
 &#9;&#9; 
 &#9;&#9;-- play the animation
@@ -258,6 +214,7 @@ end
 -------------------------------------------------------------------------------------------
 
 local toolAnimName = &quot;&quot;
+local toolOldAnimTrack = nil
 local toolAnimTrack = nil
 local currentToolAnimKeyframeHandler = nil
 
@@ -290,6 +247,7 @@ function playToolAnimation(animName, transitionTime, humanoid)
 &#9;&#9;local anim = animTable[animName][idx].anim
 
 &#9;&#9;-- load it to the humanoid; get AnimationTrack
+&#9;&#9;toolOldAnimTrack = toolAnimTrack
 &#9;&#9;toolAnimTrack = humanoid:LoadAnimation(anim)
 &#9;&#9; 
 &#9;&#9;-- play the animation
@@ -323,7 +281,7 @@ end
 
 
 function onRunning(speed)
-&#9;if speed&gt;0.5 then
+&#9;if speed&gt;0 then
 &#9;&#9;playAnimation(&quot;walk&quot;, 0.1, Humanoid)
 &#9;&#9;pose = &quot;Running&quot;
 &#9;else
@@ -342,9 +300,8 @@ function onJumping()
 &#9;pose = &quot;Jumping&quot;
 end
 
-function onClimbing(speed)
+function onClimbing()
 &#9;playAnimation(&quot;climb&quot;, 0.1, Humanoid)
-&#9;setAnimationSpeed(speed / 12.0)
 &#9;pose = &quot;Climbing&quot;
 end
 
@@ -440,13 +397,13 @@ function move(time)
 &#9;if (pose == &quot;FreeFall&quot; and jumpAnimTime &lt;= 0) then
 &#9;&#9;playAnimation(&quot;fall&quot;, fallTransitionTime, Humanoid)
 &#9;elseif (pose == &quot;Seated&quot;) then
-&#9;&#9;playAnimation(&quot;sit&quot;, 0.5, Humanoid)
+&#9;&#9;stopAllAnimations()
+&#9;&#9;moveSit()
 &#9;&#9;return
 &#9;elseif (pose == &quot;Running&quot;) then
 &#9;&#9;playAnimation(&quot;walk&quot;, 0.1, Humanoid)
 &#9;elseif (pose == &quot;Dead&quot; or pose == &quot;GettingUp&quot; or pose == &quot;FallingDown&quot; or pose == &quot;Seated&quot; or pose == &quot;PlatformStanding&quot;) then
 --&#9;&#9;print(&quot;Wha &quot; .. pose)
-&#9;&#9;stopAllAnimations()
 &#9;&#9;amplitude = 0.1
 &#9;&#9;frequency = 1
 &#9;&#9;setAngles = true
@@ -531,29 +488,29 @@ end
 
 </ProtectedString>
 		</Properties>
-		<Item class="StringValue" referent="RBXB9F94AC9C8714EE9B8DC5AC6394A39D8">
+		<Item class="StringValue" referent="RBX1">
 			<Properties>
 				<string name="Name">idle</string>
 				<string name="Value"></string>
 			</Properties>
-			<Item class="Animation" referent="RBX00CF3DBBF6A44ED5BBC717359071CB44">
+			<Item class="Animation" referent="RBX2">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125750544</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750544</url></Content>
 					<string name="Name">Animation1</string>
 				</Properties>
-				<Item class="NumberValue" referent="RBX5B18FB5697DC46F69374CB1D7236BD8C">
+				<Item class="NumberValue" referent="RBX3">
 					<Properties>
 						<string name="Name">Weight</string>
 						<double name="Value">9</double>
 					</Properties>
 				</Item>
 			</Item>
-			<Item class="Animation" referent="RBX4FDE2C9CBC2245C18F7583D18E8FA849">
+			<Item class="Animation" referent="RBX4">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125750618</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750618</url></Content>
 					<string name="Name">Animation2</string>
 				</Properties>
-				<Item class="NumberValue" referent="RBX52104EA5D6A54AF19E439A7E4F5D2874">
+				<Item class="NumberValue" referent="RBX5">
 					<Properties>
 						<string name="Name">Weight</string>
 						<double name="Value">1</double>
@@ -561,87 +518,75 @@ end
 				</Item>
 			</Item>
 		</Item>
-		<Item class="StringValue" referent="RBX3C93974F58884058B4A4E6B086D58272">
+		<Item class="StringValue" referent="RBX6">
 			<Properties>
 				<string name="Name">walk</string>
 				<string name="Value"></string>
 			</Properties>
-			<Item class="Animation" referent="RBX038BF3EC9C3E4F06B2F24E69A20F347C">
+			<Item class="Animation" referent="RBX7">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125749145</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=428005059</url></Content>
 					<string name="Name">WalkAnim</string>
 				</Properties>
 			</Item>
 		</Item>
-		<Item class="StringValue" referent="RBX2755DD130F8B4D69AC40662FF9F5E27B">
+		<Item class="StringValue" referent="RBX8">
 			<Properties>
 				<string name="Name">run</string>
 				<string name="Value"></string>
 			</Properties>
-			<Item class="Animation" referent="RBX8755FB1F0AB24E028CD877AC4266F885">
+			<Item class="Animation" referent="RBX9">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125749145</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=428005059</url></Content>
 					<string name="Name">RunAnim</string>
 				</Properties>
 			</Item>
 		</Item>
-		<Item class="StringValue" referent="RBXDE338122B8944CB4BBF75A4869F808D4">
+		<Item class="StringValue" referent="RBX10">
 			<Properties>
 				<string name="Name">jump</string>
 				<string name="Value"></string>
 			</Properties>
-			<Item class="Animation" referent="RBX94F8E8E31C3B4343A24D76E4721CA64F">
+			<Item class="Animation" referent="RBX11">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125750702</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750702</url></Content>
 					<string name="Name">JumpAnim</string>
 				</Properties>
 			</Item>
 		</Item>
-		<Item class="StringValue" referent="RBXF5D613DC6F6B44E789F7AAB2ED845805">
+		<Item class="StringValue" referent="RBX12">
 			<Properties>
 				<string name="Name">climb</string>
 				<string name="Value"></string>
 			</Properties>
-			<Item class="Animation" referent="RBX7CB10265BA4B4488A67823BF80A77DC0">
+			<Item class="Animation" referent="RBX13">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125750800</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750800</url></Content>
 					<string name="Name">ClimbAnim</string>
 				</Properties>
 			</Item>
 		</Item>
-		<Item class="StringValue" referent="RBX6E21A99A8A89468F9D60E1A2005C68A3">
+		<Item class="StringValue" referent="RBX14">
 			<Properties>
 				<string name="Name">toolnone</string>
 				<string name="Value"></string>
 			</Properties>
-			<Item class="Animation" referent="RBX8210E414C2DD416BAFD78558576B7955">
+			<Item class="Animation" referent="RBX15">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125750867</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750867</url></Content>
 					<string name="Name">ToolNoneAnim</string>
 				</Properties>
 			</Item>
 		</Item>
-		<Item class="StringValue" referent="RBXC92C8796E26C411984CCB70BA8E39107">
+		<Item class="StringValue" referent="RBX16">
 			<Properties>
 				<string name="Name">fall</string>
 				<string name="Value"></string>
 			</Properties>
-			<Item class="Animation" referent="RBX9A2EC4B488454C1ABEEEF09689D5BD33">
+			<Item class="Animation" referent="RBX17">
 				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=125750759</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750759</url></Content>
 					<string name="Name">FallAnim</string>
-				</Properties>
-			</Item>
-		</Item>
-		<Item class="StringValue" referent="RBX70F38631790D415F950C39166423D8AA">
-			<Properties>
-				<string name="Name">sit</string>
-				<string name="Value"></string>
-			</Properties>
-			<Item class="Animation" referent="RBX7A130B7EFF964AFDB81E41B6BF7A0FC7">
-				<Properties>
-					<Content name="AnimationId"><url>http://mercs.dev/asset?id=178130996</url></Content>
-					<string name="Name">SitAnim</string>
 				</Properties>
 			</Item>
 		</Item>

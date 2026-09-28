@@ -24,7 +24,7 @@ Surface surfaceShader(SurfaceInput IN, float2 fade2)
 #ifdef CFG_WANG_TILES
     float2 wangUv;
     float4 wangUVDerivatives;
-    getWang(TEXTURE(NormalDetailMap), IN.Uv, CFG_TEXTURE_TILING, wangUv, wangUVDerivatives);
+    getWang(TEXTURE_WANG(NormalDetailMap), IN.Uv, CFG_TEXTURE_TILING, wangUv, wangUVDerivatives);
 #endif
 
     float2 uv = IN.Uv * (CFG_TEXTURE_TILING);
@@ -76,7 +76,7 @@ Surface surfaceShader(SurfaceInput IN, float2 fade2)
 #ifndef GLSLES
     float4 studs = tex2D(StudsMap, IN.UvStuds);
 
-    albedo *= studs.rgb * 2;
+    albedo *= studs.r * 2;
 #endif
 
 #ifdef CFG_WANG_TILES
