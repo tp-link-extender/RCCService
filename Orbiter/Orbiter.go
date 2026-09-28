@@ -90,7 +90,7 @@ func InstallSetup(version string) error {
 
 func LoadFromSetup() (string, error) {
 	// http request to {SetupDomain}/version
-	res, err := http.Get(fmt.Sprintf("https://%s/version", os.Getenv("SETUPDOMAIN")))
+	res, err := http.Get(fmt.Sprintf("https://%s/2013/version", os.Getenv("SETUPDOMAIN")))
 	if err != nil {
 		return "", fmt.Errorf("get version from setup: %w", err)
 	}
