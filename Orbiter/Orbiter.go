@@ -39,6 +39,10 @@ func InstallSetup(version string) error {
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("get version %s from setup: unexpected status %s", version, res.Status)
+	}
+
 	Log(c.InPurple("Get successful, downloading and extracting..."))
 
 	// gunzip time
@@ -94,14 +98,18 @@ func LoadFromSetup() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get version from setup: %w", err)
 	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("get version from setup: unexpected status %s", res.Status)
+	}
 
 	verbytes, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", fmt.Errorf("read version from response body: %w", err)
 	}
-	res.Body.Close()
 
-	ver := string(verbytes)
+	ver := strings.TrimSpace(string(verbytes))
 
 	// check if ./Versions/{ver} exists
 	if _, err := os.Stat(versionPathStart + ver); errors.Is(err, os.ErrNotExist) {
