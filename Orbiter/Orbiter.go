@@ -839,9 +839,11 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	Log(fmt.Sprintf("[close] %d closed", id))
 }
 
-// hoststatusRoute receives status pings relayed by the RCC proxy's hostping route,
-// from hosted gameservers. Statuses are the first line of the body
-func (gs *Gameservers) hoststatusRoute(w http.ResponseWriter, r *http.Request) {
+// Pushed status updates for a gameserver (relayed by the RCC proxy's hostping route,
+// from hosted gameservers). The verb mirrors the other routes sharing /{id}:
+// GET /{id} queries the status, POST /{id} pushes one. The status is the first line
+// of the body
+func (gs *Gameservers) statusPushRoute(w http.ResponseWriter, r *http.Request) {
 	if !checkIP(r, w, "hoststatus") {
 		return
 	}
@@ -1005,7 +1007,7 @@ func main() {
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
 	http.HandleFunc("PUT /{id}", gameservers.startRoute)
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
-	http.HandleFunc("POST /hoststatus/{id}", gameservers.hoststatusRoute)
+	http.HandleFunc("POST /{id}", gameservers.statusPushRoute)
 
 	go servePublicStatus(gameservers)
 
