@@ -320,6 +320,14 @@ type GameserverInfo struct {
 	statusChanged chan struct{}
 
 	statusMu sync.Mutex
+	lastPush time.Time // any push (~30s engine heartbeats) walks this forward
+}
+
+// lastPushTime reads the last push timestamp under the status lock
+func (g *GameserverInfo) lastPushTime() time.Time {
+	g.statusMu.Lock()
+	defer g.statusMu.Unlock()
+	return g.lastPush
 }
 
 func (g *GameserverInfo) SetStatus(s Status) {
@@ -333,6 +341,9 @@ func (g *GameserverInfo) SetStatus(s Status) {
 
 	Log(fmt.Sprintf("[status] - changed: %d -> %d", g.Status, s))
 	g.Status = s
+	if s == Starting || s == Running {
+		g.lastPush = time.Now() // cover statuses that constitute liveliness
+	}
 	g.statusChanged <- struct{}{}
 	if s == Closed {
 		close(g.statusChanged)
@@ -422,6 +433,7 @@ local ScriptContext = game:GetService("ScriptContext")
 local NetworkServer = game:GetService("NetworkServer")
 local Players = game:GetService("Players")
 local Visit = game:GetService("Visit")
+local RunService = game:GetService("RunService")
 
 pcall(function() settings().Network.UseInstancePacketCache = true end)
 pcall(function() settings().Network.UsePhysicsPacketCache = true end)
@@ -466,6 +478,16 @@ _PRESENCE_PING
 -- report to the Orbiter right away; anything below this line runs forever once
 -- RunService:Run() takes over, and nothing past the end of the script ever executes
 pcall(function() game:HttpPost("_HOSTPING_URL", "Ready", true, "text/json") end)
+
+-- periodic engine liveness reports, once every ~30 seconds (600 heartbeats). Presence
+-- pings tick while the engine loop runs, so this is our most reliable alive signal
+local heartbeat_count = 0
+RunService.Heartbeat:connect(function()
+	heartbeat_count = heartbeat_count + 1
+	if heartbeat_count % 600 == 0 then
+		pcall(function() game:HttpPost("_HOSTPING_URL", "Heartbeat", true, "text/json") end)
+	end
+end)
 
 ScriptContext:SetTimeout(10)
 ScriptContext.ScriptsDisabled = false
@@ -666,6 +688,11 @@ func idToPort(id int) int {
 }
 
 func TrackNetwork(server *Gameserver, id int) {
+	if server.engine == engineRCC {
+		TrackRCCJob(server, id)
+		return
+	}
+
 	var up bool
 
 	port := idToPort(id)
@@ -714,6 +741,52 @@ func TrackNetwork(server *Gameserver, id int) {
 	}
 
 	Log(c.InRed(fmt.Sprintf("[track] %d network - (port %05d) appears to be down, terminating", id, port)))
+	server.Stop()
+}
+
+// TrackRCCJob monitors a hosted RCC gameserver purely on engine pushes:
+// "Ready" (which promotes the server to Running) and periodic "Heartbeat" pings.
+// The port-based probe is deliberately not used, since RCC's RakNet bindings
+// aren't reliably checkable with test-bind sockets
+func TrackRCCJob(server *Gameserver, id int) {
+	port := idToPort(id)
+	Log(c.InBlue(fmt.Sprintf("[track] %d rcc job - (port %05d) waiting for ready signal...", id, port)))
+
+	// startup: wait for the hosted script's Ready push (or a clean stop)
+	start := time.Now()
+	for time.Since(start) < 120*time.Second {
+		time.Sleep(500 * time.Millisecond)
+		if server.Status == Closed {
+			return
+		}
+		if server.Status == Running {
+			Log(c.InGreen(fmt.Sprintf("[track] %d rcc job - (port %05d) engine reported ready", id, port)))
+			break
+		}
+	}
+
+	// if the ready signal never arrives (map failure etc.), the job silently died
+	if server.Status != Running {
+		Log(c.InRed(fmt.Sprintf("[track] %d rcc job - no ready signal, terminating", id)))
+		server.Stop()
+		return
+	}
+
+	// liveness: the hosted script pings "Heartbeat" ~every 30 seconds; stop the
+	// server when nothing has been heard from it for a while
+	const gracePeriod = 90 * time.Second
+
+	for {
+		time.Sleep(10 * time.Second)
+		if server.Status == Closed {
+			return
+		}
+		if time.Since(server.GameserverInfo.lastPushTime()) > gracePeriod {
+			break
+		}
+	}
+
+	Log(c.InRed(fmt.Sprintf("[track] %d rcc job - no engine activity (last push %s ago), terminating", id, time.Since(server.GameserverInfo.lastPushTime()).Round(time.Second))))
 	server.Stop()
 }
 
@@ -880,12 +953,32 @@ func (gs *Gameservers) statusPushRoute(w http.ResponseWriter, r *http.Request) {
 	data := strings.Split(string(readBody), "\n")
 	status := data[0]
 
-	server, exists := gs.servers[id]
+	// the push loop closes fast - statuses can arrive before startRoute's tracker even
+	// registers the server. Wait for it to appear rather than dropping it
+	var server *Gameserver
+	start := time.Now()
+	for time.Since(start) < 10*time.Second {
+		server, _ = gs.servers[id]
+		if server != nil {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	if server == nil {
+		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d pushed a status but no server is tracked (status: %s)", id, status)))
+		http.Error(w, "Gameserver not found", http.StatusNotFound)
+		return
+	}
+
+	// any push from the hosted script proves the engine is alive
+	server.GameserverInfo.statusMu.Lock()
+	server.GameserverInfo.lastPush = time.Now()
+	server.GameserverInfo.statusMu.Unlock()
 
 	switch status {
 	case "Ready":
 		Log(c.InGreen(fmt.Sprintf("[hoststatus] %d server is ready", id)))
-		if exists && server.Status == Starting {
+		if server.Status == Starting {
 			server.SetStatus(Running)
 		}
 	case "Loaded":
@@ -900,9 +993,7 @@ func (gs *Gameservers) statusPushRoute(w http.ResponseWriter, r *http.Request) {
 		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d player left", id)))
 	case "Closed":
 		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d server announced its own closure", id)))
-		if exists {
-			server.Stop()
-		}
+		server.Stop()
 	default:
 		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d unknown status: %s", id, status)))
 	}
