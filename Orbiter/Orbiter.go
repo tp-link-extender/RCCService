@@ -463,6 +463,10 @@ end)
 NetworkServer:Start(_SERVER_PORT)
 _PRESENCE_PING
 
+-- report to the Orbiter right away; anything below this line runs forever once
+-- RunService:Run() takes over, and nothing past the end of the script ever executes
+pcall(function() game:HttpPost("_HOSTPING_URL", "Ready", true, "text/json") end)
+
 ScriptContext:SetTimeout(10)
 ScriptContext.ScriptsDisabled = false
 
@@ -526,6 +530,10 @@ func composeHostScript(id int) (string, error) {
 	script = strings.ReplaceAll(script, "_MAP_LOCATION", strconv.Quote(mapLocation))
 	script = strings.ReplaceAll(script, "_SERVER_PORT", strconv.Itoa(idToPort(id)))
 	script = strings.ReplaceAll(script, "_PRESENCE_PING", presenceLine)
+	// the hosted server reports "Ready" directly to the proxy's hostping route as soon
+	// as NetworkServer:Start succeeds - much more reliable than the port probe
+	hostingURL := strings.TrimSuffix(os.Getenv("PROXY_URL"), "/")
+	script = strings.ReplaceAll(script, "_HOSTPING_URL", fmt.Sprintf("%s/hostping/%d", hostingURL, id))
 
 	return script, nil
 }
