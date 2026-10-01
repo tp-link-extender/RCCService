@@ -533,14 +533,15 @@ func composeHostScript(id int) (string, error) {
 		baseURL = resBaseURL[1]
 	}
 
-	mapLocation, extract := os.LookupEnv("RCC_MAP_LOCATION")
-	if mapLocation == "none" { // "none" disables map loading in the hosted script
+	mapLocation, overridden := os.LookupEnv("RCC_MAP_LOCATION")
+	if overridden && mapLocation == "none" { // "none" skips map loading (tests)
 		mapLocation = ""
-		extract = false
-	}
-	if mapLocation == "" && extract { // unset = extracted from the serve script
+	} else if !overridden {
 		if resMapLocation := reMapLocation.FindStringSubmatch(s); resMapLocation != nil {
-			mapLocation = resMapLocation[1]
+			mapLocation = resMapLocation[1] // extracted from the serve script
+		} else {
+			// canonical: the Site serves the map's rbxl directly
+			mapLocation = fmt.Sprintf("http://www.%s/game/%d", os.Getenv("DOMAIN"), id)
 		}
 	}
 
