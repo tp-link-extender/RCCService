@@ -659,6 +659,11 @@ type Gameservers struct {
 	version     string
 	servers     map[int]*Gameserver
 	serverAdded chan int
+
+	// statuses pushed between a hosted job starting and its tracker registering
+	// the server; flushed on registration
+	pendingMu sync.Mutex
+	pending   map[int][][]string
 }
 
 func NewGameservers(version string) *Gameservers {
@@ -666,6 +671,27 @@ func NewGameservers(version string) *Gameservers {
 		version:     version,
 		servers:     make(map[int]*Gameserver),
 		serverAdded: make(chan int, 100),
+		pending:     make(map[int][][]string),
+	}
+}
+
+// deferStatus stores a push that arrived before its server was registered
+func (gs *Gameservers) deferStatus(id int, data []string) {
+	gs.pendingMu.Lock()
+	gs.pending[id] = append(gs.pending[id], data)
+	gs.pendingMu.Unlock()
+}
+
+// flushStatuses applies (and clears) any deferred statuses for id
+func (gs *Gameservers) flushStatuses(id int, server *Gameserver) {
+	gs.pendingMu.Lock()
+	deferred := gs.pending[id]
+	delete(gs.pending, id)
+	gs.pendingMu.Unlock()
+
+	for _, data := range deferred {
+		Log(c.InBlue(fmt.Sprintf("[track] %d - flushing deferred status: %s", id, data[0])))
+		gs.applyStatus(id, server, data)
 	}
 }
 
@@ -792,6 +818,7 @@ func TrackRCCJob(server *Gameserver, id int) {
 
 func (gs *Gameservers) Track(server *Gameserver, id int) {
 	gs.servers[id] = server
+	gs.flushStatuses(id, server)
 	gs.serverAdded <- id
 
 	Log(fmt.Sprintf("[track] %d - tracking started", id))
@@ -954,21 +981,31 @@ func (gs *Gameservers) statusPushRoute(w http.ResponseWriter, r *http.Request) {
 	status := data[0]
 
 	// the push loop closes fast - statuses can arrive before startRoute's tracker even
-	// registers the server. Wait for it to appear rather than dropping it
+	// registers the server, so apply it directly if the server is here, otherwise
+	// defer it (Track flushes deferred statuses on registration)
 	var server *Gameserver
 	start := time.Now()
-	for time.Since(start) < 10*time.Second {
-		server, _ = gs.servers[id]
+	for time.Since(start) < 2*time.Second {
+		server = gs.servers[id]
 		if server != nil {
 			break
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
 	if server == nil {
-		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d pushed a status but no server is tracked (status: %s)", id, status)))
-		http.Error(w, "Gameserver not found", http.StatusNotFound)
+		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d server not yet tracked, deferring status: %s", id, status)))
+		gs.deferStatus(id, data)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
+
+	gs.applyStatus(id, server, data)
+}
+
+// applyStatus processes a pushed status from a hosted gameserver (first line of
+// the body is the status)
+func (gs *Gameservers) applyStatus(id int, server *Gameserver, data []string) {
+	status := data[0]
 
 	// any push from the hosted script proves the engine is alive
 	server.GameserverInfo.statusMu.Lock()
