@@ -428,6 +428,10 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 // script forever while pumping everything else (including the reporting code the
 // Proxy prepends)
 const rccHostScript = `print "[Orbiter][RCC]: Starting hosted gameserver..."
+print "[Orbiter][RCC]:         place id: " .. _PLACE_ID
+print "[Orbiter][RCC]:          base url: " .. _BASE_URL
+print "[Orbiter][RCC]:           map loc: " .. _MAP_LOCATION
+print "[Orbiter][RCC]:        server port: " .. _SERVER_PORT
 
 local ScriptContext = game:GetService("ScriptContext")
 local NetworkServer = game:GetService("NetworkServer")
@@ -462,7 +466,9 @@ pcall(function() InsertService:SetAssetUrl(url .. "/asset?id=%d") end)
 pcall(function() InsertService:SetAssetVersionUrl(url .. "/asset?assetversionid=%d") end)
 
 if _MAP_LOCATION ~= "" then
+	print "[Orbiter][RCC]: loading map..."
 	game:Load(_MAP_LOCATION)
+	print "[Orbiter][RCC]: map loaded"
 end
 
 Players.PlayerAdded:connect(function(player)
@@ -473,6 +479,7 @@ Players.PlayerRemoving:connect(function(player)
 end)
 
 NetworkServer:Start(_SERVER_PORT)
+print "[Orbiter][RCC]: network server started"
 _PRESENCE_PING
 
 -- report to the Orbiter right away; anything below this line runs forever once
@@ -556,6 +563,8 @@ func composeHostScript(id int) (string, error) {
 	// as NetworkServer:Start succeeds - much more reliable than the port probe
 	hostingURL := strings.TrimSuffix(os.Getenv("PROXY_URL"), "/")
 	script = strings.ReplaceAll(script, "_HOSTPING_URL", fmt.Sprintf("%s/hostping/%d", hostingURL, id))
+
+	Log(c.InBlue(fmt.Sprintf("[compose] %d - host script ready (%d chars): base=%q map=%q port=%d presence=%v", id, len(script), baseURL, mapLocation, idToPort(id), presenceLine != "")))
 
 	return script, nil
 }

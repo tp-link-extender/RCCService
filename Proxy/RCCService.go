@@ -320,6 +320,8 @@ func (p *pool) Submit(id string, kind string, soap string) error {
 		return fmt.Errorf("RCCService returned a SOAP fault: %s", string(response))
 	}
 
+	Log(c.InBlue(fmt.Sprintf("[submit] %s (%s) on instance port %d - RCC replied: %s", id, kind, instance.port, strings.TrimSpace(string(response)))))
+
 	Log(c.InGreen(fmt.Sprintf("Job %s (%s) started on instance port %d", id, kind, instance.port)))
 
 	// hosting jobs get their leases renewed, render jobs expire by themselves (30s)
@@ -695,6 +697,9 @@ func hostRoute(w http.ResponseWriter, r *http.Request) {
 	// scheduler (see above), so nothing after RunService:Run() would ever execute
 	epilogue := strings.ReplaceAll(hostEpilogue, "_PING_URL", "http://127.0.0.1:"+strconv.Itoa(proxyListenerPort)+"/hostping/"+id)
 	script := epilogue + "\n\n" + string(loadScript)
+
+	firstLine := strings.SplitN(string(loadScript), "\n", 2)[0]
+	Log(c.InBlue(fmt.Sprintf("[host] %s - host script received (%d chars), first line: %q", id, len(script), firstLine)))
 
 	currentTemplate := strings.ReplaceAll(hostTemplate, "_TASK_ID", id)
 	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", os.Getenv("HOST_EXPIRATION"))
