@@ -402,14 +402,16 @@ func (p *pool) CloseJob(id string) {
 
 		instance := j.instance
 		if instance != nil {
-			body := strings.ReplaceAll(closeTemplate, "_TASK_ID", id)
+			// this RCC build only implements CloseJob (CloseJobEx doesn't exist on it)
+			method := "CloseJob"
+			body := strings.ReplaceAll(strings.ReplaceAll(closeTemplate, "_TASK_ID", id), "CloseJobEx", method)
 
 			req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", instance.port), strings.NewReader(body))
 			if err != nil {
 				Log(c.InRed(fmt.Sprintf("Failed to create close request for job %s: %s", id, err.Error())))
 			} else {
 				req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-				req.Header.Set("SOAPAction", "http://roblox.com/CloseJobEx")
+				req.Header.Set("SOAPAction", "http://roblox.com/"+method)
 
 				res, err := client.Do(req)
 				if err != nil {

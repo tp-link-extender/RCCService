@@ -4,8 +4,8 @@
 	xmlns:xsd="http://www.w3.org/2001/XMLSchema"
 	xmlns:ns1="http://roblox.com/">
 	<soap:Body>
-		<ns1:CloseJobEx>
+		<ns1:CloseJob>
 			<ns1:jobID>_TASK_ID</ns1:jobID>
-		</ns1:CloseJobEx>
+		</ns1:CloseJob>
 	</soap:Body>
 </soap:Envelope>
