@@ -428,10 +428,6 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 // script forever while pumping everything else (including the reporting code the
 // Proxy prepends)
 const rccHostScript = `print "[Orbiter][RCC]: Starting hosted gameserver..."
-print "[Orbiter][RCC]:         place id: " .. _PLACE_ID
-print "[Orbiter][RCC]:          base url: " .. _BASE_URL
-print "[Orbiter][RCC]:           map loc: " .. _MAP_LOCATION
-print "[Orbiter][RCC]:        server port: " .. _SERVER_PORT
 
 local ScriptContext = game:GetService("ScriptContext")
 local NetworkServer = game:GetService("NetworkServer")
@@ -486,8 +482,7 @@ _PRESENCE_PING
 -- RunService:Run() takes over, and nothing past the end of the script ever executes
 pcall(function() game:HttpPost("_HOSTPING_URL", "Ready", true, "text/json") end)
 
--- periodic engine liveness reports, once every ~30 seconds (600 heartbeats). Presence
--- pings tick while the engine loop runs, so this is our most reliable alive signal
+-- periodic engine liveness reports, once every ~600 heartbeats into an integer
 local heartbeat_count = 0
 RunService.Heartbeat:connect(function()
 	heartbeat_count = heartbeat_count + 1
