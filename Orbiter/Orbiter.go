@@ -536,13 +536,12 @@ func composeHostScript(id int) (string, error) {
 	mapLocation, overridden := os.LookupEnv("RCC_MAP_LOCATION")
 	if overridden && mapLocation == "none" { // "none" skips map loading (tests)
 		mapLocation = ""
-	} else if !overridden {
-		if resMapLocation := reMapLocation.FindStringSubmatch(s); resMapLocation != nil {
-			mapLocation = resMapLocation[1] // extracted from the serve script
-		} else {
-			// canonical: the Site serves the map's rbxl directly
-			mapLocation = fmt.Sprintf("http://www.%s/game/%d", os.Getenv("DOMAIN"), id)
-		}
+	} else if overridden && mapLocation != "none" {
+		// explicit override, used verbatim
+	} else {
+		// RCC's own hosting script (gameserver.txt) loads places via the asset route,
+		// not the rbxclient /game/{id} route (which is what Studio-based hosting uses)
+		mapLocation = fmt.Sprintf("http://%s/asset/?id=%d", baseURL, id)
 	}
 
 	presenceLine := ""
