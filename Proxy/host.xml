@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+	xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+	xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+	xmlns:ns1="http://roblox.com/">
+	<soap:Body>
+		<ns1:BatchJobEx>
+			<ns1:job>
+				<ns1:id>_TASK_ID</ns1:id>
+				<ns1:expirationInSeconds>_EXPIRATION</ns1:expirationInSeconds>
+				<ns1:category>1</ns1:category>
+				<ns1:cores>1</ns1:cores>
+			</ns1:job>
+			<ns1:script>
+				<ns1:name>HostScript</ns1:name>
+				<ns1:script>
+					_HOST_SCRIPT
+				</ns1:script>
+			</ns1:script>
+		</ns1:BatchJobEx>
+	</soap:Body>
+</soap:Envelope>

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -29,11 +30,26 @@ const (
 	versionPathStart = "./Versions/version-"
 )
 
+// engines for hosting
+const (
+	engineStudio = "studio" // 2013 Studio hosted gameservers
+	engineRCC    = "rcc"    // gameservers hosted via RCCService jobs through the Proxy
+)
+
 // We don't need the launcher from setup, we're just running Studio
 // (arguably we don't need the Client either, but there's gonna be so many more clients than servers it's probably worth it)
+// setupDomain returns an absolute setup domain; allows e.g. http://localhost:63488 for dev
+func setupDomain() string {
+	domain := os.Getenv("SETUPDOMAIN")
+	if scheme := strings.Index(domain, "://"); scheme == -1 {
+		return "https://" + domain
+	}
+	return domain
+}
+
 func InstallSetup(version string) error {
 	// http request to {SetupDomain}/version/download
-	res, err := http.Get(fmt.Sprintf("https://%s/2013/%s", os.Getenv("SETUPDOMAIN"), version))
+	res, err := http.Get(fmt.Sprintf("%s/2013/%s", setupDomain(), version))
 	if err != nil {
 		return fmt.Errorf("get version from setup: %w", err)
 	}
@@ -94,7 +110,7 @@ func InstallSetup(version string) error {
 
 func LoadFromSetup() (string, error) {
 	// http request to {SetupDomain}/version
-	res, err := http.Get(fmt.Sprintf("https://%s/2013/version", os.Getenv("SETUPDOMAIN")))
+	res, err := http.Get(fmt.Sprintf("%s/2013/version", setupDomain()))
 	if err != nil {
 		return "", fmt.Errorf("get version from setup: %w", err)
 	}
@@ -302,9 +318,19 @@ type GameserverInfo struct {
 	StartTime     int64  `json:"startTime"`
 	Status        Status `json:"status"`
 	statusChanged chan struct{}
+
+	statusMu sync.Mutex
 }
 
 func (g *GameserverInfo) SetStatus(s Status) {
+	// SetStatus(Closed) both signals and closes; don't let that channel double-close
+	g.statusMu.Lock()
+	defer g.statusMu.Unlock()
+
+	if g.Status == Closed {
+		return
+	}
+
 	Log(fmt.Sprintf("[status] - changed: %d -> %d", g.Status, s))
 	g.Status = s
 	g.statusChanged <- struct{}{}
@@ -316,6 +342,26 @@ func (g *GameserverInfo) SetStatus(s Status) {
 type Gameserver struct {
 	GameserverInfo
 	*exec.Cmd
+
+	// "rcc" gameservers aren't backed by a process we own, but by a job on an
+	// RCCService instance (managed by the Proxy). Closing them means telling the
+	// Proxy to send CloseJobEx
+	engine string
+	stopFn func() error
+	done   chan struct{}
+
+	stopOnce sync.Once
+}
+
+// startGameProxy is the per-game UDP relay shared by both hosting engines
+func startGameProxy(id int) (*Proxy, error) {
+	proxy := &Proxy{
+		Port: idToPort(id) + proxyOffset, // proxy port is offset from gameserver port by a fixed number
+	}
+	if err := proxy.Start(); err != nil {
+		return nil, fmt.Errorf("start proxy: %w", err)
+	}
+	return proxy, nil
 }
 
 func NewGameserver(version string, id int) (*Gameserver, error) {
@@ -326,11 +372,9 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 		return nil, fmt.Errorf("retrieve studio executable metadata: %w", err)
 	}
 
-	proxy := &Proxy{
-		Port: idToPort(id) + proxyOffset, // proxy port is offset from gameserver port by a fixed number
-	}
-	if err := proxy.Start(); err != nil {
-		return nil, fmt.Errorf("start proxy: %w", err)
+	proxy, err := startGameProxy(id)
+	if err != nil {
+		return nil, err
 	}
 
 	args := []string{
@@ -340,10 +384,6 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 	}
 	if runtime.GOOS != "windows" {
 		args = append([]string{"wine"}, args...)
-	}
-	// current environment is copied to new process
-	for _, env := range os.Environ() {
-		fmt.Println(env)
 	}
 
 	cmd := exec.Command(args[0], args[1:]...)
@@ -365,16 +405,224 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 			Status:        Starting,
 			statusChanged: make(chan struct{}, 100),
 		},
-		Cmd: cmd,
+		Cmd:    cmd,
+		engine: engineStudio,
+		done:   make(chan struct{}),
+	}, nil
+}
+
+// RCC-safe host script. IMPORTANT: OpenJobEx script environments don't pump a
+// scheduler on this RCC build - wait() and delay() never resume - so this is entirely
+// inline (see gameserver.txt) and ends with RunService:Run(), which takes over the
+// script forever while pumping everything else (including the reporting code the
+// Proxy prepends)
+const rccHostScript = `print "[Orbiter][RCC]: Starting hosted gameserver..."
+
+local ScriptContext = game:GetService("ScriptContext")
+local NetworkServer = game:GetService("NetworkServer")
+local Players = game:GetService("Players")
+local Visit = game:GetService("Visit")
+
+pcall(function() settings().Network.UseInstancePacketCache = true end)
+pcall(function() settings().Network.UsePhysicsPacketCache = true end)
+settings()["Task Scheduler"].PriorityMethod = Enum.PriorityMethod.AccumulatedError
+settings().Network.PhysicsSend = Enum.PhysicsSendMethod.TopNErrors
+settings().Network.ExperimentalPhysicsEnabled = true
+pcall(function() settings().Diagnostics:LegacyScriptMode() end)
+pcall(function() settings().Diagnostics.LuaRamLimit = 0 end)
+
+ScriptContext.ScriptsDisabled = true
+
+local url = "http://_BASE_URL"
+
+pcall(function() game:SetPlaceID(_PLACE_ID, false) end)
+pcall(function() game:GetService("ChangeHistoryService"):SetEnabled(false) end)
+
+pcall(function() Players:SetAbuseReportUrl(url .. "/AbuseReport/InGameChatHandler.ashx") end)
+pcall(function() ScriptInformationProvider = game:GetService("ScriptInformationProvider"); ScriptInformationProvider:SetAssetUrl(url .. "/asset/") end)
+pcall(function() ContentProvider:SetBaseUrl(url) end)
+pcall(function() game:GetService("BadgeService"):SetPlaceId(_PLACE_ID) end)
+pcall(function() game:GetService("BadgeService"):SetIsBadgeLegalUrl("") end)
+pcall(function() InsertService:SetBaseSetsUrl(url .. "/Game/Tools/InsertAsset.ashx?nsets=10&type=base") end)
+pcall(function() InsertService:SetUserSetsUrl(url .. "/Game/Tools/InsertAsset.ashx?nsets=20&type=user&userid=%d") end)
+pcall(function() InsertService:SetCollectionUrl(url .. "/Game/Tools/InsertAsset.ashx?sid=%d") end)
+pcall(function() InsertService:SetAssetUrl(url .. "/asset?id=%d") end)
+pcall(function() InsertService:SetAssetVersionUrl(url .. "/asset?assetversionid=%d") end)
+
+if _MAP_LOCATION ~= "" then
+	game:Load(_MAP_LOCATION)
+end
+
+Players.PlayerAdded:connect(function(player)
+	print("Player " .. player.userId .. " added")
+end)
+Players.PlayerRemoving:connect(function(player)
+	print("Player " .. player.userId .. " leaving")
+end)
+
+NetworkServer:Start(_SERVER_PORT)
+_PRESENCE_PING
+
+ScriptContext:SetTimeout(10)
+ScriptContext.ScriptsDisabled = false
+
+game:GetService("RunService"):Run()`
+
+var (
+	reBaseURL     = regexp.MustCompile(`local url = "http://" \.\. "([^"]+)"`) // the serve loadscript sets this up with the Site's DomainInsecure
+	reMapLocation = regexp.MustCompile(`local mapLoc = "([^"]*)"`)
+	rePresenceURL = regexp.MustCompile(`Visit:SetPing\("([^"]+)", \d+\)`)
+)
+
+// composeHostScript builds an inline, RCC-safe host script. Most parameters are taken
+// from the Site's serve loadscript, since it already has the right domain, map and
+// authentication info embedded
+func composeHostScript(id int) (string, error) {
+	siteURL := os.Getenv("SITE_URL")
+	if siteURL == "" {
+		siteURL = fmt.Sprintf("http://www.%s", os.Getenv("DOMAIN"))
+	}
+	serveURL := fmt.Sprintf("%s/game/%d/serve", siteURL, id)
+
+	res, err := http.Get(serveURL)
+	if err != nil {
+		return "", fmt.Errorf("fetch serve loadscript: %w", err)
+	}
+	serveScript, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		return "", fmt.Errorf("read serve loadscript: %w", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch serve loadscript: unexpected status %s", res.Status)
+	}
+
+	s := string(serveScript)
+
+	baseURL := os.Getenv("DOMAIN")
+	resBaseURL := reBaseURL.FindStringSubmatch(s)
+	if resBaseURL != nil {
+		baseURL = resBaseURL[1]
+	}
+
+	mapLocation, extract := os.LookupEnv("RCC_MAP_LOCATION")
+	if mapLocation == "none" { // "none" disables map loading in the hosted script
+		mapLocation = ""
+		extract = false
+	}
+	if mapLocation == "" && extract { // unset = extracted from the serve script
+		if resMapLocation := reMapLocation.FindStringSubmatch(s); resMapLocation != nil {
+			mapLocation = resMapLocation[1]
+		}
+	}
+
+	presenceLine := ""
+	if resPresenceURL := rePresenceURL.FindStringSubmatch(s); resPresenceURL != nil {
+		presenceLine = fmt.Sprintf("pcall(function() Visit:SetPing(%q, 30) end)", resPresenceURL[1])
+	}
+
+	script := strings.ReplaceAll(rccHostScript, "_BASE_URL", baseURL)
+	script = strings.ReplaceAll(script, "_PLACE_ID", strconv.Itoa(id))
+	script = strings.ReplaceAll(script, "_MAP_LOCATION", strconv.Quote(mapLocation))
+	script = strings.ReplaceAll(script, "_SERVER_PORT", strconv.Itoa(idToPort(id)))
+	script = strings.ReplaceAll(script, "_PRESENCE_PING", presenceLine)
+
+	return script, nil
+}
+
+// NewRCCGameserver hosts a gameserver as a job on an RCCService instance, by sending
+// the host script to the RCC proxy. The Proxy owns the RCC instances and load balances
+// jobs between them
+func NewRCCGameserver(version string, id int) (*Gameserver, error) {
+	proxy, err := startGameProxy(id)
+	if err != nil {
+		return nil, err
+	}
+
+	script, err := composeHostScript(id)
+	if err != nil {
+		proxy.Stop()
+		return nil, err
+	}
+
+	Log(c.InBlue(fmt.Sprintf("Sending host job %d to RCC proxy", id)))
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/host/%d", os.Getenv("PROXY_URL"), id), strings.NewReader(script))
+	if err != nil {
+		proxy.Stop()
+		return nil, fmt.Errorf("create request to RCC proxy: %w", err)
+	}
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("PROXY_KEY"))
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		proxy.Stop()
+		return nil, fmt.Errorf("send request to RCC proxy: %w", err)
+	}
+	io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		proxy.Stop()
+		return nil, fmt.Errorf("send request to RCC proxy: unexpected status %s", res.Status)
+	}
+
+	closeJob := func() error {
+		req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/host/%d", os.Getenv("PROXY_URL"), id), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+os.Getenv("PROXY_KEY"))
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected status %s", res.Status)
+		}
+		return nil
+	}
+
+	return &Gameserver{
+		GameserverInfo: GameserverInfo{
+			Pid:           os.Getpid(),
+			Proxy:         proxy,
+			StartTime:     time.Now().UnixMilli(),
+			Status:        Starting,
+			statusChanged: make(chan struct{}, 100),
+		},
+		Cmd:    nil,
+		engine: engineRCC,
+		stopFn: closeJob,
+		done:   make(chan struct{}),
 	}, nil
 }
 
 func (g *Gameserver) Stop() error {
-	g.SetStatus(Closed)
+	if g.Status == Closed {
+		return nil
+	}
+
+	g.SetStatus(Closed) // block Track's done wait and let it bail on the Closed check
+
+	g.stopOnce.Do(func() {
+		if g.stopFn != nil {
+			if err := g.stopFn(); err != nil { // close RCC job (nil for studio servers)
+				Log(c.InRed(fmt.Sprintf("Failed to close RCC job: %s", err.Error())))
+			}
+		}
+		if g.Cmd != nil {
+			g.Process.Kill()
+		}
+		close(g.done)
+	})
+
 	if g.Proxy != nil {
 		g.Proxy.Stop()
 	}
-	return g.Process.Kill()
+
+	return nil
 }
 
 type Gameservers struct {
@@ -460,15 +708,25 @@ func (gs *Gameservers) Track(server *Gameserver, id int) {
 
 	go TrackNetwork(server, id)
 
-	err := server.Cmd.Wait()
-	if server.Status == Closed { // if tracked multiple times
-		return
-	}
+	if server.Cmd != nil { // studio servers exit for themselves
+		err := server.Cmd.Wait()
+		if server.Status == Closed { // if tracked multiple times
+			return
+		}
 
-	if err != nil {
-		Log(c.InRed(fmt.Sprintf("[track] %d process - exited with error %s", id, err.Error())))
-	} else {
-		Log(c.InYellow(fmt.Sprintf("[track] %d process - exited normally", id)))
+		if err != nil {
+			Log(c.InRed(fmt.Sprintf("[track] %d process - exited with error %s", id, err.Error())))
+		} else {
+			Log(c.InYellow(fmt.Sprintf("[track] %d process - exited normally", id)))
+		}
+	} else { // RCC-hosted servers: wait for the tracker/orbiter to close the job
+		select {
+		case <-server.done:
+		}
+		if server.Status == Closed { // if tracked multiple times
+			return
+		}
+		Log(c.InYellow(fmt.Sprintf("[track] %d rcc job - closed", id)))
 	}
 	server.SetStatus(Closed)
 }
@@ -481,7 +739,7 @@ func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 
 	serverInfo := make([][2]any, 0, len(gs.servers))
 	for id, server := range gs.servers {
-		serverInfo = append(serverInfo, [2]any{id, server.GameserverInfo})
+		serverInfo = append(serverInfo, [2]any{id, &server.GameserverInfo})
 	}
 	// serverInfo = append(serverInfo, [2]any{-1, GameserverInfo{Pid: os.Getpid(), StartTime: time.Now().UnixMilli()}}) // test
 
@@ -512,7 +770,7 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(server.GameserverInfo); err != nil {
+	if err := json.NewEncoder(w).Encode(&server.GameserverInfo); err != nil {
 		http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -537,7 +795,17 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	server, err := NewGameserver(gs.version, id)
+	engine := r.URL.Query().Get("engine")
+	if engine == "" {
+		engine = os.Getenv("DEFAULT_ENGINE")
+	}
+
+	var NewFunc = NewGameserver
+	if engine == engineRCC {
+		NewFunc = NewRCCGameserver
+	}
+
+	server, err := NewFunc(gs.version, id)
 	if err != nil {
 		Log(c.InRed(fmt.Sprintf("[start] failed to start gameserver for ID %d: %s", id, err.Error())))
 		http.Error(w, "Failed to start gameserver: "+err.Error(), http.StatusInternalServerError)
@@ -569,6 +837,56 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 	server.Stop()
 
 	Log(fmt.Sprintf("[close] %d closed", id))
+}
+
+// hoststatusRoute receives status pings relayed by the RCC proxy's hostping route,
+// from hosted gameservers. Statuses are the first line of the body
+func (gs *Gameservers) hoststatusRoute(w http.ResponseWriter, r *http.Request) {
+	if !checkIP(r, w, "hoststatus") {
+		return
+	}
+
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	readBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := strings.Split(string(readBody), "\n")
+	status := data[0]
+
+	server, exists := gs.servers[id]
+
+	switch status {
+	case "Ready":
+		Log(c.InGreen(fmt.Sprintf("[hoststatus] %d server is ready", id)))
+		if exists && server.Status == Starting {
+			server.SetStatus(Running)
+		}
+	case "Loaded":
+		Log(c.InGreen(fmt.Sprintf("[hoststatus] %d host script loaded", id)))
+	case "PlayerAdded":
+		var userId string
+		if len(data) > 1 {
+			userId = data[1]
+		}
+		Log(c.InGreen(fmt.Sprintf("[hoststatus] %d player joined: %s", id, userId)))
+	case "PlayersLeft":
+		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d player left", id)))
+	case "Closed":
+		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d server announced its own closure", id)))
+		if exists {
+			server.Stop()
+		}
+	default:
+		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d unknown status: %s", id, status)))
+	}
 }
 
 func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
@@ -687,6 +1005,7 @@ func main() {
 	http.HandleFunc("GET /{id}", gameservers.statusRoute)
 	http.HandleFunc("PUT /{id}", gameservers.startRoute)
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
+	http.HandleFunc("POST /hoststatus/{id}", gameservers.hoststatusRoute)
 
 	go servePublicStatus(gameservers)
 
