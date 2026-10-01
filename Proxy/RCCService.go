@@ -661,12 +661,13 @@ func hostpingIdRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res.Body.Close()
-
 	if res.StatusCode != http.StatusOK {
 		Log(c.InRed(fmt.Sprintf("Orbiter (%s) responded with status code %d", req.URL.String(), res.StatusCode)))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	Log(c.InGreen("Relayed host status of " + id + " to " + req.URL.String()))
 }
 
 // hostRoute starts a hosted gameserver job on an RCC instance, coming from the Orbiter.
