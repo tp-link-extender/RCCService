@@ -677,6 +677,13 @@ func TrackNetwork(server *Gameserver, id int) {
 		if server.Status == Closed {
 			return
 		}
+		// the engine may have already reported itself ready (RCC-hosted servers
+		// send "Ready" through the proxy the moment NetworkServer:Start succeeds);
+		// trusting that is more reliable than the port probe itself
+		if server.Status == Running {
+			Log(c.InBlue(fmt.Sprintf("[track] %d engine - reported ready, skipping wait", id)))
+			break
+		}
 		if up = CheckServerUp(port); up {
 			break
 		}
@@ -685,14 +692,16 @@ func TrackNetwork(server *Gameserver, id int) {
 		}
 	}
 
-	if !up {
+	if !up && server.Status != Running {
 		Log(c.InRed(fmt.Sprintf("[track] %d network - (port %05d) failed to start in time, terminating", id, port)))
 		server.Stop()
 		return
 	}
 
 	Log(c.InGreen(fmt.Sprintf("[track] %d network - (port %05d) is up and running", id, port)))
-	server.SetStatus(Running)
+	if server.Status != Running {
+		server.SetStatus(Running)
+	}
 
 	for {
 		time.Sleep(10 * time.Second)
