@@ -67,6 +67,11 @@ type rccInstance struct {
 	alive   bool
 	started bool
 
+	// held-open write end of the instance's stdin pipe; RCC reads its management
+	// input from stdin, and an empty/closed stdin makes it exit cleanly (after
+	// running whatever jobs it already had)
+	stdinWriter *os.File
+
 	restarts int
 }
 
@@ -115,34 +120,29 @@ func (i *rccInstance) run() {
 		rccArgs = append([]string{"wine"}, rccArgs...)
 	}
 
-	// RCC_SPAWN=console launches each instance inside a real console window (its
-	// stdout/stderr stay there, not ours), exactly like a manual start. Go's plain
-	// exec puts the child on redirected handles, which some engine builds don't
-	// survive; use it to check spawn-environment parity during hosting issues
-	spawnMode := "direct"
-	if os.Getenv("RCC_SPAWN") == "console" {
-		spawnMode = "console"
-	}
-
 	for {
-		var cmd *exec.Cmd
-		if spawnMode == "console" && runtime.GOOS == "windows" {
-			// cmd /C keeps a real console attached for the lifetime of the child (its
-			// output goes there, not to our redirected handles) and still blocks until
-			// RCC exits, so the restart loop keeps working
-			cmd = exec.Command("cmd", append([]string{"/C"}, rccArgs...)...)
-		} else {
-			cmd = exec.Command(rccArgs[0], rccArgs[1:]...)
-		}
+		cmd := exec.Command(rccArgs[0], rccArgs[1:]...)
 
 		// run from the executable's own directory, matching a manual launch (content,
 		// AppSettings.xml etc. are resolved relative to the CWD)
 		cmd.Dir = filepath.Dir(exePath)
-		if spawnMode != "console" {
-			// in console mode the child's output goes to its own console window
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		// stdin is kept open for the process's whole lifetime: a closed/empty stdin
+		// makes RCC's management input loop end (and the process exits cleanly,
+		// taking every running job with it)
+		stdinR, stdinW, err := os.Pipe()
+		if err != nil {
+			Log(c.InRed(fmt.Sprintf("Failed to create stdin pipe for RCC instance on port %d: %s", i.port, err.Error())))
+			time.Sleep(5 * time.Second)
+			continue
 		}
+		cmd.Stdin = stdinR
+		i.mu.Lock()
+		i.stdinWriter = stdinW
+		i.mu.Unlock()
+		// DON'T close stdinW - holding it open pins the pipe until the process exits
 
 		i.mu.Lock()
 		alive := i.alive
