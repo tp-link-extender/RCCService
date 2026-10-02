@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -109,17 +110,36 @@ var jobPool *pool
 
 // run makes sure an instance's process stays alive until the instance is told to die
 func (i *rccInstance) run() {
-	args := []string{exePath, "-Console", strconv.Itoa(i.port)}
+	rccArgs := []string{exePath, "-Console", strconv.Itoa(i.port)}
 	if runtime.GOOS != "windows" {
-		args = append([]string{"wine"}, args...)
+		rccArgs = append([]string{"wine"}, rccArgs...)
+	}
+
+	// RCC_SPAWN=console launches each instance inside a real console window (its
+	// stdout/stderr stay there, not ours), exactly like a manual start. Go's plain
+	// exec puts the child on redirected handles, which some engine builds don't
+	// survive; use it to check spawn-environment parity during hosting issues
+	spawnMode := "direct"
+	if os.Getenv("RCC_SPAWN") == "console" {
+		spawnMode = "console"
 	}
 
 	for {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Println(err)
+		var cmd *exec.Cmd
+		if spawnMode == "console" {
+			inner := append([]string{"/C", "start", "/b", "RCCService"}, rccArgs[runtime.GOOS == "windows":]...)
+			cmd = exec.Command("cmd", inner...)
+		} else {
+			cmd = exec.Command(rccArgs[0], rccArgs[1:]...)
+		}
+
+		// run from the executable's own directory, matching a manual launch (content,
+		// AppSettings.xml etc. are resolved relative to the CWD)
+		cmd.Dir = filepath.Dir(exePath)
+		if spawnMode != "console" {
+			// in console mode the child's output goes to its own console window
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
 		}
 
 		i.mu.Lock()
@@ -322,7 +342,7 @@ func (p *pool) Submit(id string, kind string, soap string) error {
 
 	Log(c.InBlue(fmt.Sprintf("[submit] %s (%s) on instance port %d - RCC replied: %s", id, kind, instance.port, strings.TrimSpace(string(response)))))
 
-	Log(c.InGreen(fmt.Sprintf("Job %s (%s) started on instance port %d", id, kind, instance.port)))
+	Log(c.InGreen(fmt.Sprintf("Job %s (%s) started on instance port %d (dir %s)", id, kind, instance.port, filepath.Dir(exePath))))
 
 	// hosting jobs get their leases renewed, render jobs expire by themselves (30s)
 	if kind == "host" && p.renew {
