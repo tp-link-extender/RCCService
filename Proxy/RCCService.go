@@ -38,6 +38,10 @@ import (
 
 const exePath = "./RCCService/RCCService.exe"
 
+// resolved at startup from the proxy's CWD; Windows can't resolve a relative exe
+// path once cmd.Dir moves the child elsewhere
+var absExePath, absDir string
+
 //go:embed render.xml
 var renderTemplate string
 
@@ -115,7 +119,7 @@ var jobPool *pool
 
 // run makes sure an instance's process stays alive until the instance is told to die
 func (i *rccInstance) run() {
-	rccArgs := []string{exePath, "-Console", strconv.Itoa(i.port)}
+	rccArgs := []string{absExePath, "-Console", strconv.Itoa(i.port)}
 	if runtime.GOOS != "windows" {
 		rccArgs = append([]string{"wine"}, rccArgs...)
 	}
@@ -125,7 +129,7 @@ func (i *rccInstance) run() {
 
 		// run from the executable's own directory, matching a manual launch (content,
 		// AppSettings.xml etc. are resolved relative to the CWD)
-		cmd.Dir = filepath.Dir(exePath)
+		cmd.Dir = absDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -172,6 +176,11 @@ func (i *rccInstance) run() {
 
 		i.restarts++
 		Log(c.InRed(fmt.Sprintf("RCCService instance on port %d has stopped. Restarting... (#%d)", i.port, i.restarts)))
+
+		// back off on fast failures (a spawn error would otherwise flood restarts)
+		if i.restarts > 3 {
+			time.Sleep(time.Duration(min(30, i.restarts)) * time.Second)
+		}
 	}
 }
 
@@ -809,6 +818,12 @@ func main() {
 	}
 	renewSeconds, err := strconv.Atoi(os.Getenv("HOST_EXPIRATION"))
 	Fatal(err, "HOST_EXPIRATION must be an integer (0 = no renewal, close jobs explicitly)")
+
+	// resolve the RCC executable locations once; the relative const is only a
+	// documented default otherwise
+	absExePath, err = filepath.Abs(exePath)
+	Fatal(err, "Failed to resolve RCCService path.")
+	absDir = filepath.Dir(absExePath)
 
 	// reserve the listener before spawning RCC instances, so a bind failure doesn't
 	// leave orphaned instances behind
