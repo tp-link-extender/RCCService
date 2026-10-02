@@ -501,7 +501,7 @@ game:GetService("RunService"):Run()`
 var (
 	reBaseURL     = regexp.MustCompile(`local url = "http://" \.\. "([^"]+)"`) // the serve loadscript sets this up with the Site's DomainInsecure
 	reMapLocation = regexp.MustCompile(`local mapLoc = "([^"]*)"`)
-	rePresenceURL = regexp.MustCompile(`Visit:SetPing\("([^"]+)", \d+\)`)
+	rePresenceURL = regexp.MustCompile(`[a-z]+://[^"'\s]+/game/serverpresence\?ticket=[^"'\s]+`)
 )
 
 // composeHostScript builds an inline, RCC-safe host script. Most parameters are taken
@@ -548,7 +548,9 @@ func composeHostScript(id int) (string, error) {
 
 	presenceLine := ""
 	if resPresenceURL := rePresenceURL.FindStringSubmatch(s); resPresenceURL != nil {
-		presenceLine = fmt.Sprintf("pcall(function() Visit:SetPing(%q, 30) end)", resPresenceURL[1])
+		// matches the serverpresence URL directly instead of assuming how the
+		// loadscript spells out its Visit:SetPing call
+		presenceLine = fmt.Sprintf("pcall(function() Visit:SetPing(%q, 30) end)", resPresenceURL[0])
 	}
 
 	script := strings.ReplaceAll(rccHostScript, "_BASE_URL", baseURL)
