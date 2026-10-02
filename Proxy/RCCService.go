@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -38,9 +37,7 @@ import (
 
 const exePath = "./RCCService/RCCService.exe"
 
-// resolved at startup from the proxy's CWD; Windows can't resolve a relative exe
-// path once cmd.Dir moves the child elsewhere
-var absExePath, absDir string
+var client http.Client
 
 //go:embed render.xml
 var renderTemplate string
@@ -56,8 +53,6 @@ var closeTemplate string
 
 var proxyListenerPort = 64990
 
-var client http.Client
-
 func Logr(txt string) {
 	fmt.Print("\r", time.Now().Format("2006/01/02, 15:04:05  "), txt) // fmt.Print don't add spaces between args
 }
@@ -70,11 +65,6 @@ type rccInstance struct {
 	jobs    map[string]*job
 	alive   bool
 	started bool
-
-	// held-open write end of the instance's stdin pipe; RCC reads its management
-	// input from stdin, and an empty/closed stdin makes it exit cleanly (after
-	// running whatever jobs it already had)
-	stdinWriter *os.File
 
 	restarts int
 }
@@ -119,34 +109,18 @@ var jobPool *pool
 
 // run makes sure an instance's process stays alive until the instance is told to die
 func (i *rccInstance) run() {
-	rccArgs := []string{absExePath, "-Console", strconv.Itoa(i.port)}
+	args := []string{exePath, "-Console", strconv.Itoa(i.port)}
 	if runtime.GOOS != "windows" {
-		rccArgs = append([]string{"wine"}, rccArgs...)
+		args = append([]string{"wine"}, args...)
 	}
 
 	for {
-		cmd := exec.Command(rccArgs[0], rccArgs[1:]...)
-
-		// run from the executable's own directory, matching a manual launch (content,
-		// AppSettings.xml etc. are resolved relative to the CWD)
-		cmd.Dir = absDir
+		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-
-		// stdin is kept open for the process's whole lifetime: a closed/empty stdin
-		// makes RCC's management input loop end (and the process exits cleanly,
-		// taking every running job with it)
-		stdinR, stdinW, err := os.Pipe()
-		if err != nil {
-			Log(c.InRed(fmt.Sprintf("Failed to create stdin pipe for RCC instance on port %d: %s", i.port, err.Error())))
-			time.Sleep(5 * time.Second)
-			continue
+		if err := cmd.Run(); err != nil {
+			fmt.Println(err)
 		}
-		cmd.Stdin = stdinR
-		i.mu.Lock()
-		i.stdinWriter = stdinW
-		i.mu.Unlock()
-		// DON'T close stdinW - holding it open pins the pipe until the process exits
 
 		i.mu.Lock()
 		alive := i.alive
@@ -353,7 +327,7 @@ func (p *pool) Submit(id string, kind string, soap string) error {
 
 	Log(c.InBlue(fmt.Sprintf("[submit] %s (%s) on instance port %d - RCC replied: %s", id, kind, instance.port, strings.TrimSpace(string(response)))))
 
-	Log(c.InGreen(fmt.Sprintf("Job %s (%s) started on instance port %d (dir %s)", id, kind, instance.port, filepath.Dir(exePath))))
+	Log(c.InGreen(fmt.Sprintf("Job %s (%s) started on instance port %d", id, kind, instance.port)))
 
 	// hosting jobs get their leases renewed, render jobs expire by themselves (30s)
 	if kind == "host" && p.renew {
@@ -818,12 +792,6 @@ func main() {
 	}
 	renewSeconds, err := strconv.Atoi(os.Getenv("HOST_EXPIRATION"))
 	Fatal(err, "HOST_EXPIRATION must be an integer (0 = no renewal, close jobs explicitly)")
-
-	// resolve the RCC executable locations once; the relative const is only a
-	// documented default otherwise
-	absExePath, err = filepath.Abs(exePath)
-	Fatal(err, "Failed to resolve RCCService path.")
-	absDir = filepath.Dir(absExePath)
 
 	// reserve the listener before spawning RCC instances, so a bind failure doesn't
 	// leave orphaned instances behind
