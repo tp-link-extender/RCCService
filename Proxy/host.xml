@@ -4,7 +4,7 @@
 	xmlns:xsd="http://www.w3.org/2001/XMLSchema"
 	xmlns:ns1="http://roblox.com/">
 	<soap:Body>
-		<ns1:BatchJobEx>
+		<ns1:OpenJobEx>
 			<ns1:job>
 				<ns1:id>_TASK_ID</ns1:id>
 				<ns1:expirationInSeconds>_EXPIRATION</ns1:expirationInSeconds>
@@ -17,6 +17,6 @@
 					_HOST_SCRIPT
 				</ns1:script>
 			</ns1:script>
-		</ns1:BatchJobEx>
+		</ns1:OpenJobEx>
 	</soap:Body>
 </soap:Envelope>

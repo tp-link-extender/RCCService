@@ -416,7 +416,7 @@ func (p *pool) renewLoop(j *job) {
 	}
 }
 
-// CloseJob sends a CloseJobEx request to the job's instance and frees its slot
+// CloseJob sends a CloseJob request to the job's instance and frees its slot
 func (p *pool) CloseJob(id string) {
 	j := p.getJob(id)
 	if j == nil {
@@ -469,7 +469,7 @@ func (p *pool) CloseJob(id string) {
 }
 
 // freeRenderSlot lightly frees a render job's slot. Host jobs tracking is the orbiter's
-// problem, and closing one properly requires CloseJobEx (pool.CloseJob)
+// problem, and closing one properly requires CloseJob (pool.CloseJob)
 func (p *pool) freeRenderSlot(id string) {
 	j := p.getJob(id)
 	if j == nil || j.kind != "render" {
@@ -810,7 +810,7 @@ func main() {
 	// - HOST_EXPIRATION=300 -> jobs last 300s; leases are renewed with RenewLease every
 	//   150s (strategy 1: self-healing, jobs die if the proxy stops renewing them)
 	// - HOST_EXPIRATION=0   -> jobs last practically forever (9999999999s) and are
-	//   explicitly closed with CloseJobEx when the Orbiter asks for it (strategy 2)
+	//   explicitly closed with CloseJob when the Orbiter asks for it (strategy 2)
 	expiration := os.Getenv("HOST_EXPIRATION")
 	if expiration == "0" {
 		expiration = "9999999999"
