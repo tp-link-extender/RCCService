@@ -62,6 +62,9 @@ func Logr(txt string) {
 type rccInstance struct {
 	port int
 
+	// dedicated workload: "render" or "host"; instances never change kind
+	kind string
+
 	mu      sync.Mutex
 	jobs    map[string]*job
 	alive   bool
@@ -70,9 +73,10 @@ type rccInstance struct {
 	restarts int
 }
 
-func newRCCInstance(port int) *rccInstance {
+func newRCCInstance(port int, kind string) *rccInstance {
 	return &rccInstance{
 		port:  port,
+		kind:  kind,
 		jobs:  make(map[string]*job),
 		alive: true,
 	}
@@ -212,13 +216,13 @@ func (p *pool) allocPort() (int, error) {
 }
 
 // spawn adds an instance to the pool and starts its process (possibly on a newly allocated port)
-func (p *pool) spawn() (*rccInstance, error) {
+func (p *pool) spawn(kind string) (*rccInstance, error) {
 	port, err := p.allocPort()
 	if err != nil {
 		return nil, err
 	}
 
-	instance := newRCCInstance(port)
+	instance := newRCCInstance(port, kind)
 
 	p.mu.Lock()
 	p.instances = append(p.instances, instance)
@@ -228,13 +232,14 @@ func (p *pool) spawn() (*rccInstance, error) {
 	return instance, nil
 }
 
-// pickInstance grabs the instance with the fewest active jobs; ok = an instance was found
-func (p *pool) pickInstance() (instance *rccInstance, ok bool) {
+// pickInstance grabs the same-kind instance with the fewest active jobs;
+// ok = one was found. Render and host instances never share jobs
+func (p *pool) pickInstance(kind string) (instance *rccInstance, ok bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	for _, ins := range p.instances {
-		if !ins.alive {
+		if !ins.alive || ins.kind != kind {
 			continue
 		}
 		if n := ins.countJobs(); n < p.maxJobs && (instance == nil || n < instance.countJobs()) {
@@ -293,12 +298,12 @@ func (p *pool) Submit(id string, kind string, soap string) error {
 		p.deleteJob(id)
 	}
 
-	instance, ok := p.pickInstance()
+	instance, ok := p.pickInstance(kind)
 	if !ok {
-		Log(c.InBlue("All RCCService instances are full, spawning a new one..."))
+		Log(c.InBlue(fmt.Sprintf("All %s RCCService instances are full, spawning a new one...", kind)))
 
 		var err error
-		instance, err = p.spawn()
+		instance, err = p.spawn(kind)
 		if err != nil {
 			cleanupJob()
 			return fmt.Errorf("spawn new RCCService instance: %w", err)
@@ -841,7 +846,7 @@ func main() {
 	defer listener.Close()
 
 	Log(c.InPurple("Starting RCCService..."))
-	instance, err := jobPool.spawn()
+	instance, err := jobPool.spawn("render") // the default instance is render-only
 	Fatal(err, "Failed to spawn initial RCCService instance.")
 
 	Logr(c.InPurple("Waiting for RCCService to start..."))
