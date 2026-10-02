@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -117,23 +118,33 @@ func (i *rccInstance) run() {
 	for {
 		spawnMode := os.Getenv("RCC_SPAWN")
 		if spawnMode == "" {
-			spawnMode = "console" // manual parity is the default on Windows now
+			if runtime.GOOS == "windows" {
+				spawnMode = "detached" // launch like a manual start on Windows
+			} else {
+				spawnMode = "direct"
+			}
 		}
 
-		var cmd *exec.Cmd
-		if spawnMode == "console" {
-			// launch exactly like a manual start: own console window, no redirected
-			// handles; still our child, so the restart loop keeps working
-			cmd = consoleSpawn(i)
-		} else {
+		switch spawnMode {
+		case "detached":
+			// fully detached launch + process-list polling (Windows)
+			if err := spawnDetached(i); err != nil {
+				Log(c.InRed(fmt.Sprintf("Failed to spawn RCCService on port %d: %s", i.port, err.Error())))
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			Logr(c.InPurple(fmt.Sprintf("Waiting for RCCService on port %d to start...", i.port)))
+			for spawnAlive(i) {
+				time.Sleep(3 * time.Second)
+			}
+		default:
 			// the original spawn: relative path against the proxy's CWD
-			cmd = exec.Command(args[0], args[1:]...)
-			// only the direct spawn redirects handles
+			cmd := exec.Command(args[0], args[1:]...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-		}
-		if err := cmd.Run(); err != nil {
-			fmt.Println(err)
+			if err := cmd.Run(); err != nil {
+				fmt.Println(err)
+			}
 		}
 
 		i.mu.Lock()
@@ -855,4 +866,34 @@ func main() {
 		Log(c.InRed("Failed to start RCCService proxy: " + err.Error()))
 		os.Exit(1)
 	}
+}
+
+// spawnDetached launches an RCCService instance exactly like a manual start: a
+// fully detached, separate console process (cmd start), independent of this
+// process beyond the initial CreateProcess call. Liveness is polled instead of
+// waiting on process handles
+func spawnDetached(i *rccInstance) error {
+	absExe, err := filepath.Abs(exePath)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("cmd", "/C", "start", "RCCService "+strconv.Itoa(i.port), absExe, "-Console", strconv.Itoa(i.port))
+	cmd.Dir = filepath.Dir(absExe)
+	// returns once cmd.exe has launched RCC; RCC keeps running on its own
+	return cmd.Run()
+}
+
+// spawnAlive checks whether an instance's process still exists by looking for
+// its unique `-Console <port>` command line
+func spawnAlive(i *rccInstance) bool {
+	port := strconv.Itoa(i.port)
+	check := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+		`if (Get-CimInstance Win32_Process -Filter "Name='RCCService.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match [regex]::Escape('-Console `+port+`') }) { Write-Output alive }`)
+	out, err := check.Output()
+	if err != nil {
+		// if the check can't run, be conservative and let the instance live
+		Log(c.InYellow(fmt.Sprintf("Liveness check failed for instance %d: %v", i.port, err)))
+		return true
+	}
+	return strings.TrimSpace(string(out)) == "alive"
 }
