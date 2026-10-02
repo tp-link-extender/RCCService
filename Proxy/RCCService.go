@@ -115,9 +115,23 @@ func (i *rccInstance) run() {
 	}
 
 	for {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		spawnMode := os.Getenv("RCC_SPAWN")
+		if spawnMode == "" {
+			spawnMode = "console" // manual parity is the default on Windows now
+		}
+
+		var cmd *exec.Cmd
+		if spawnMode == "console" {
+			// launch exactly like a manual start: own console window, no redirected
+			// handles; still our child, so the restart loop keeps working
+			cmd = consoleSpawn(i)
+		} else {
+			// the original spawn: relative path against the proxy's CWD
+			cmd = exec.Command(args[0], args[1:]...)
+			// only the direct spawn redirects handles
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
 		if err := cmd.Run(); err != nil {
 			fmt.Println(err)
 		}

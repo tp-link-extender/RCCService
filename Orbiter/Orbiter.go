@@ -249,6 +249,8 @@ func runProxyOnPort(p *Proxy) {
 			sessions[key] = s
 			mu.Unlock()
 
+			Log(c.InBlue(fmt.Sprintf("[proxy:%d] new client session %s -> 127.0.0.1:%d", p.Port, key, gsPort)))
+
 			// start goroutine to read gameserver responses and forward to client
 			// go readWrite(key, s)
 			go func() {
