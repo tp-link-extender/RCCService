@@ -127,9 +127,10 @@ func (i *rccInstance) run() {
 	for {
 		var cmd *exec.Cmd
 		if spawnMode == "console" && runtime.GOOS == "windows" {
-			// `start /b` runs RCC inside a real console, like a manual launch; still
-			// blocks until the child exits so the restart loop keeps working
-			cmd = exec.Command("cmd", append([]string{"/C", "start", "/b", "/wait", "RCCService"}, rccArgs...)...)
+			// cmd /C keeps a real console attached for the lifetime of the child (its
+			// output goes there, not to our redirected handles) and still blocks until
+			// RCC exits, so the restart loop keeps working
+			cmd = exec.Command("cmd", append([]string{"/C"}, rccArgs...)...)
 		} else {
 			cmd = exec.Command(rccArgs[0], rccArgs[1:]...)
 		}
