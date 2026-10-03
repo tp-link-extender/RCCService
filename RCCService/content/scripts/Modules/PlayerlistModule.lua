@@ -134,11 +134,13 @@ local SHADOW_IMAGE = 'rbxasset://textures/ui/PlayerList/TileShadowMissingTop.png
 local SHADOW_SLICE_SIZE = 5
 local SHADOW_SLICE_RECT = Rect.new(SHADOW_SLICE_SIZE+1, SHADOW_SLICE_SIZE+1, SHADOW_SLICE_SIZE*2-1, SHADOW_SLICE_SIZE*2-1)
 
-local ADMINS = {	-- Admins with special icons
-    ['7210880'] = 'http://www.roblox.com/asset/?id=134032333', -- Jeditkacheff
-    ['13268404'] = 'http://www.roblox.com/asset/?id=113059239', -- Sorcus
-    ['261'] = 'http://www.roblox.com/asset/?id=105897927', -- shedlestky
-    ['20396599'] = 'http://www.roblox.com/asset/?id=161078086', -- Robloxsai
+local ADMINS = {
+	taskmanager = 1,
+	heliodex = 1,
+	mercury = 1,
+	hiro = 1,
+	snowboardvip = 1,
+	delightful = 1,
 }
 
 local ABUSES = {
@@ -317,7 +319,12 @@ local function getMembershipIcon(player)
 		else
 			local userIdStr = tostring(player.userId)
 			local membershipType = player.MembershipType
-			if ADMINS[userIdStr] then
+			print("test")
+			if ADMINS[string.lower(player.Name)] ~= nil then
+				if ADMINS[string.lower(player.Name)] == 1 then
+					print("test")
+					return path "http://www.mercs.dev/asset?id=6923330951"
+				end
 				return ADMINS[userIdStr]
 			elseif player.userId == game.CreatorId and game.CreatorType == Enum.CreatorType.User then
 				return PLACE_OWNER_ICON
