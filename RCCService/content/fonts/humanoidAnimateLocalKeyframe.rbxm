@@ -32,8 +32,8 @@ local oldAnimTrack = nil
 local animTable = {}
 local animNames = { 
 &#9;idle = &#9;{&#9;
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750544&quot;, weight = 9 },
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750618&quot;, weight = 1 }
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=818598353&quot;, weight = 9 },
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=144465035&quot;, weight = 1 }
 &#9;&#9;&#9;},
 &#9;walk = &#9;{ &#9;
 &#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=428005059&quot;, weight = 10 } 
@@ -42,23 +42,23 @@ local animNames = {
 &#9;&#9;&#9;&#9;{ id = &quot;run.xml&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;jump = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750702&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=350015166&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;fall = &#9;{
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750759&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=723937231&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;climb = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750800&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=672165801&quot;, weight = 10 } 
 &#9;&#9;&#9;}, 
 &#9;toolnone = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=125750867&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=638194164&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;toolslash = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=129967390&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=541176495&quot;, weight = 10 } 
 --&#9;&#9;&#9;&#9;{ id = &quot;slash.xml&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;toollunge = {
-&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=129967478&quot;, weight = 10 } 
+&#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=482115211&quot;, weight = 10 } 
 &#9;&#9;&#9;},
 &#9;wave = {
 &#9;&#9;&#9;&#9;{ id = &quot;http://www.mercs.dev/asset?id=128777973&quot;, weight = 10 } 
@@ -495,7 +495,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX2">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750544</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=818598353</url></Content>
 					<string name="Name">Animation1</string>
 				</Properties>
 				<Item class="NumberValue" referent="RBX3">
@@ -507,7 +507,7 @@ end
 			</Item>
 			<Item class="Animation" referent="RBX4">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750618</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=144465035</url></Content>
 					<string name="Name">Animation2</string>
 				</Properties>
 				<Item class="NumberValue" referent="RBX5">
@@ -549,7 +549,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX11">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750702</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=350015166</url></Content>
 					<string name="Name">JumpAnim</string>
 				</Properties>
 			</Item>
@@ -561,7 +561,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX13">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750800</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=672165801</url></Content>
 					<string name="Name">ClimbAnim</string>
 				</Properties>
 			</Item>
@@ -573,7 +573,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX15">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750867</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=638194164</url></Content>
 					<string name="Name">ToolNoneAnim</string>
 				</Properties>
 			</Item>
@@ -585,7 +585,7 @@ end
 			</Properties>
 			<Item class="Animation" referent="RBX17">
 				<Properties>
-					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=125750759</url></Content>
+					<Content name="AnimationId"><url>http://www.mercs.dev/asset?id=723937231</url></Content>
 					<string name="Name">FallAnim</string>
 				</Properties>
 			</Item>
