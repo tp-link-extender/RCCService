@@ -493,9 +493,11 @@ RunService.Heartbeat:connect(function()
 	end
 end)
 
--- inactivity shutdown (like Studio's host.lua: 5 minutes after the last player
--- leaves, including the initial grace period before anyone joins)
+-- inactivity report (like Studio's host.lua: 5 minutes after the last player
+-- leaves, including the initial grace period before anyone joins). game:Shutdown()
+-- doesn't exist in RCC jobs, so the Orbiter closes the job on receiving this
 local lastActive = os.time()
+local hasReportedUnused = false
 local RCCPlayers = game:GetService("Players")
 
 RCCPlayers.PlayerAdded:connect(function()
@@ -507,10 +509,10 @@ RCCPlayers.PlayerRemoving:connect(function()
 end)
 
 RunService.Heartbeat:connect(function()
-	if #RCCPlayers:GetPlayers() == 0 and os.time() - lastActive > 300 then
-		print "[Orbiter][RCC]: server empty for 5 minutes, shutting down"
+	if not hasReportedUnused and #RCCPlayers:GetPlayers() == 0 and os.time() - lastActive > 300 then
+		hasReportedUnused = true
+		print "[Orbiter][RCC]: server empty for 5 minutes, requesting shutdown"
 		pcall(function() game:HttpPost("_HOSTPING_URL", "Unoccupied", true, "text/json") end)
-		game:Shutdown()
 	end
 end)
 
@@ -1058,7 +1060,8 @@ func (gs *Gameservers) applyStatus(id int, server *Gameserver, data []string) {
 	case "PlayersLeft":
 		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d player left", id)))
 	case "Unoccupied":
-		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d server unoccupied, shutting down", id)))
+		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d server unoccupied, closing job", id)))
+		server.Stop()
 	case "Closed":
 		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d server announced its own closure", id)))
 		server.Stop()
