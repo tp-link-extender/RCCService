@@ -70,6 +70,10 @@ type rccInstance struct {
 	alive   bool
 	started bool
 
+	// process tracking for the detached spawn mode (used by the idle-shutdown)
+	pid   int
+	child *exec.Cmd
+
 	restarts int
 }
 
@@ -137,6 +141,20 @@ func (i *rccInstance) run() {
 				time.Sleep(10 * time.Second)
 				continue
 			}
+
+			// track the process's actual pid for later kills (idle shutdown, instance stops)
+			for attempt := 0; attempt < 15; attempt++ {
+				time.Sleep(1 * time.Second)
+				if pid, err := findPid(i.port); err != nil {
+					Log(c.InYellow(fmt.Sprintf("Pid lookup failed for instance %d: %v", i.port, err)))
+				} else if pid > 0 {
+					i.mu.Lock()
+					i.pid = pid
+					i.mu.Unlock()
+					break
+				}
+			}
+
 			Logr(c.InPurple(fmt.Sprintf("Waiting for RCCService on port %d to start...", i.port)))
 			for spawnAlive(i) {
 				time.Sleep(3 * time.Second)
@@ -146,6 +164,11 @@ func (i *rccInstance) run() {
 			cmd := exec.Command(args[0], args[1:]...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
+
+			i.mu.Lock()
+			i.child = cmd
+			i.mu.Unlock()
+
 			if err := cmd.Run(); err != nil {
 				fmt.Println(err)
 			}
@@ -176,6 +199,11 @@ func (i *rccInstance) run() {
 		if !alive {
 			return
 		}
+		// only render instances restart themselves after a crash; host instances
+		// are spawned on demand by submissions and die when idle
+		if i.kind != "render" {
+			return
+		}
 
 		i.restarts++
 		Log(c.InRed(fmt.Sprintf("RCCService instance on port %d has stopped. Restarting... (#%d)", i.port, i.restarts)))
@@ -187,10 +215,34 @@ func (i *rccInstance) run() {
 	}
 }
 
+// kill stops an instance: alive=false, then removes the process itself
 func (i *rccInstance) kill() {
 	i.mu.Lock()
 	i.alive = false
+	pid := i.pid
+	child := i.child
 	i.mu.Unlock()
+
+	switch {
+	case child != nil && child.Process != nil:
+		child.Process.Kill()
+	case pid > 0:
+		if err := exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid), "/T").Run(); err != nil {
+			Log(c.InRed(fmt.Sprintf("Failed to kill RCCService instance %d (pid %d): %v", i.port, pid, err)))
+		}
+	}
+
+	Log(c.InYellow(fmt.Sprintf("RCCService instance on port %d shut down", i.port)))
+}
+
+// findPid looks up the pid of the RCCService process running a -Console <port>
+func findPid(port int) (int, error) {
+	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+		`(Get-CimInstance Win32_Process -Filter "Name='RCCService.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match [regex]::Escape('-Console `+strconv.Itoa(port)+`') }).ProcessId`).Output()
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(out)))
 }
 
 func (p *pool) allocPort() (int, error) {
@@ -421,6 +473,20 @@ func (p *pool) renewLoop(j *job) {
 	}
 }
 
+// idleShutdown closes an instance if it's a host instance with no active jobs
+// left; the always-on render instance is never shut down this way
+func (p *pool) idleShutdown(instance *rccInstance) {
+	if instance == nil || instance.kind != "host" {
+		return
+	}
+	if instance.countJobs() > 0 {
+		return
+	}
+
+	Log(c.InYellow(fmt.Sprintf("Host instance on port %d has no active jobs, closing it...", instance.port)))
+	instance.kill()
+}
+
 // CloseJob sends a CloseJob request to the job's instance and frees its slot
 func (p *pool) CloseJob(id string) {
 	j := p.getJob(id)
@@ -470,6 +536,7 @@ func (p *pool) CloseJob(id string) {
 		}
 
 		p.deleteJob(id)
+		p.idleShutdown(instance)
 	})
 }
 
@@ -888,12 +955,25 @@ func spawnDetached(i *rccInstance) error {
 	return cmd.Run()
 }
 
-// spawnAlive checks whether an instance's process still exists by looking for
-// its unique `-Console <port>` command line
+// spawnAlive checks whether an instance's process still exists, going by the
+// tracked pid when available, or by its `-Console <port>` command line otherwise
 func spawnAlive(i *rccInstance) bool {
-	port := strconv.Itoa(i.port)
+	i.mu.Lock()
+	pid := i.pid
+	i.mu.Unlock()
+
+	if pid > 0 {
+		check := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/NH")
+		out, err := check.Output()
+		if err != nil {
+			Log(c.InYellow(fmt.Sprintf("Liveness check failed for instance %d: %v", i.port, err)))
+			return true // unknown: don't kill a possibly-alive instance on a fluke
+		}
+		return strings.Contains(string(out), "RCCService.exe")
+	}
+
 	check := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
-		`if (Get-CimInstance Win32_Process -Filter "Name='RCCService.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match [regex]::Escape('-Console `+port+`') }) { Write-Output alive }`)
+		`if (Get-CimInstance Win32_Process -Filter "Name='RCCService.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match [regex]::Escape('-Console `+strconv.Itoa(i.port)+`') }) { Write-Output alive }`)
 	out, err := check.Output()
 	if err != nil {
 		// if the check can't run, be conservative and let the instance live
