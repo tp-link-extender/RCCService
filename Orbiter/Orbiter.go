@@ -3,6 +3,8 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -313,6 +315,91 @@ func (g *GameserverInfo) SetStatus(s Status) {
 	}
 }
 
+type serveScript struct {
+	token string
+	body  []byte
+}
+
+var serveScripts = struct {
+	sync.RWMutex
+	m map[int]serveScript
+}{m: make(map[int]serveScript)}
+
+func fetchServeScript(id int) ([]byte, error) {
+	key := os.Getenv("GAMESERVER_KEY")
+	if key == "" {
+		return nil, errors.New("GAMESERVER_KEY is not set")
+	}
+	domain := os.Getenv("DOMAIN")
+	url := fmt.Sprintf("http://www.%s/game/%d/serve", domain, id)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build serve request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch serve script: %w", err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read serve script: %w", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch serve script: status %d: %s", res.StatusCode, string(body))
+	}
+	return body, nil
+}
+
+func registerServeScript(id int, body []byte) (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate serve token: %w", err)
+	}
+	token := hex.EncodeToString(b)
+	serveScripts.Lock()
+	serveScripts.m[id] = serveScript{token: token, body: body}
+	serveScripts.Unlock()
+	return token, nil
+}
+
+func unregisterServeScript(id int) {
+	serveScripts.Lock()
+	delete(serveScripts.m, id)
+	serveScripts.Unlock()
+}
+
+func serveInternalScript(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	serveScripts.RLock()
+	s, ok := serveScripts.m[id]
+	serveScripts.RUnlock()
+	if !ok || r.URL.Query().Get("t") != s.token {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Write(s.body)
+}
+
+func startInternalServeServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /serve/{id}", serveInternalScript)
+	go func() {
+		Log(c.InCyan("~ Internal serve script server is up on 127.0.0.1:64993 ~"))
+		if err := http.ListenAndServe("127.0.0.1:64993", mux); err != nil {
+			Log(c.InRed("Failed to start internal serve script server: " + err.Error()))
+		}
+	}()
+}
+
 type Gameserver struct {
 	GameserverInfo
 	*exec.Cmd
@@ -333,10 +420,21 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 		return nil, fmt.Errorf("start proxy: %w", err)
 	}
 
+	scriptBody, err := fetchServeScript(id)
+	if err != nil {
+		proxy.Stop()
+		return nil, fmt.Errorf("fetch serve script: %w", err)
+	}
+	token, err := registerServeScript(id, scriptBody)
+	if err != nil {
+		proxy.Stop()
+		return nil, err
+	}
+
 	args := []string{
 		exePath,
 		"-script",
-		fmt.Sprintf(`dofile("http://www.%s/game/%d/serve")`, os.Getenv("DOMAIN"), id),
+		fmt.Sprintf(`dofile("http://127.0.0.1:64993/serve/%d?t=%s")`, id, token),
 	}
 	if runtime.GOOS != "windows" {
 		args = append([]string{"wine"}, args...)
@@ -353,6 +451,7 @@ func NewGameserver(version string, id int) (*Gameserver, error) {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
+		unregisterServeScript(id)
 		proxy.Stop()
 		return nil, fmt.Errorf("start MercuryStudioBeta.exe: %w", err)
 	}
@@ -431,6 +530,7 @@ func TrackNetwork(server *Gameserver, id int) {
 
 	if !up {
 		Log(c.InRed(fmt.Sprintf("[track] %d network - (port %05d) failed to start in time, terminating", id, port)))
+		unregisterServeScript(id)
 		server.Stop()
 		return
 	}
@@ -441,6 +541,7 @@ func TrackNetwork(server *Gameserver, id int) {
 	for {
 		time.Sleep(10 * time.Second)
 		if server.Status == Closed {
+			unregisterServeScript(id)
 			return
 		}
 		if !CheckServerUp(port) {
@@ -449,6 +550,7 @@ func TrackNetwork(server *Gameserver, id int) {
 	}
 
 	Log(c.InRed(fmt.Sprintf("[track] %d network - (port %05d) appears to be down, terminating", id, port)))
+	unregisterServeScript(id)
 	server.Stop()
 }
 
@@ -462,6 +564,7 @@ func (gs *Gameservers) Track(server *Gameserver, id int) {
 
 	err := server.Cmd.Wait()
 	if server.Status == Closed { // if tracked multiple times
+		unregisterServeScript(id)
 		return
 	}
 
@@ -470,6 +573,7 @@ func (gs *Gameservers) Track(server *Gameserver, id int) {
 	} else {
 		Log(c.InYellow(fmt.Sprintf("[track] %d process - exited normally", id)))
 	}
+	unregisterServeScript(id)
 	server.SetStatus(Closed)
 }
 
@@ -566,6 +670,7 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	unregisterServeScript(id)
 	server.Stop()
 
 	Log(fmt.Sprintf("[close] %d closed", id))
@@ -689,6 +794,8 @@ func main() {
 	http.HandleFunc("DELETE /{id}", gameservers.closeRoute) // idempotency!!
 
 	go servePublicStatus(gameservers)
+
+	startInternalServeServer()
 
 	Log(c.InGreen("~ Orbiter is up on port 64991 ~"))
 	if err := http.ListenAndServe(":64991", nil); err != nil {
