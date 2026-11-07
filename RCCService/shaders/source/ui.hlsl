@@ -2,8 +2,8 @@
 
 struct Appdata
 {
-    float4 Position	    : POSITION;
-    float2 Uv	        : TEXCOORD0;
+    float4 Position     : POSITION;
+    float2 Uv           : TEXCOORD0;
     float4 Color        : COLOR0;
 };
 
@@ -19,7 +19,7 @@ struct VertexOutput
 #endif
 };
 
-uniform float4 LuminanceSampling; 
+uniform float4 UIParams;  // x = luminance sampling on/off, w = z offset
 TEX_DECLARE2D(DiffuseMap, 0);
 
 VertexOutput UIVS(Appdata IN)
@@ -27,6 +27,7 @@ VertexOutput UIVS(Appdata IN)
     VertexOutput OUT = (VertexOutput)0;
 
     OUT.HPosition = mul(G(ViewProjection), IN.Position);
+    OUT.HPosition.z -= UIParams.w; // against z-fighting
 
     OUT.Uv = IN.Uv;
     OUT.Color = IN.Color;
@@ -42,7 +43,7 @@ float4 UIPS(VertexOutput IN): COLOR0
 {
     float4 base;
 
-    if (LuminanceSampling.x > 0.5)
+    if (UIParams.x > 0.5)
         base = float4(1, 1, 1,tex2D(DiffuseMap, IN.Uv).r);
     else
         base = tex2D(DiffuseMap, IN.Uv);

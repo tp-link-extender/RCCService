@@ -25,7 +25,11 @@
 	{ "name": "LowQMaterialFS", "source": "plastic.hlsl", "target": "ps_2_0", "entrypoint": "DefaultPS", "defines": "PIN_LOWQMAT" },
     { "name": "LowQMaterialWangFS", "source": "plastic.hlsl", "target": "ps_2_a", "entrypoint": "DefaultPS", "defines": "PIN_LOWQMAT PIN_WANG" },
     { "name": "LowQMaterialWangFallbackFS", "source": "plastic.hlsl", "target": "ps_2_0", "entrypoint": "DefaultPS", "defines": "PIN_LOWQMAT PIN_WANG_FALLBACK" },
-    
+
+	{ "name": "DefaultShadowStaticVS", "source": "shadow.hlsl", "target": "vs_2_0", "entrypoint": "ShadowVS" },
+	{ "name": "DefaultShadowSkinnedVS", "source": "shadow.hlsl", "target": "vs_2_0", "entrypoint": "ShadowVS", "defines": "PIN_SKINNED" },
+	{ "name": "DefaultShadowFS", "source": "shadow.hlsl", "target": "ps_2_0", "entrypoint": "ShadowPS" },
+   
     { "name": "DefaultPlasticFS", "source": "plastic.hlsl", "target": "ps_2_0", "entrypoint": "DefaultPS" },
     { "name": "DefaultNeonFS", "source": "neon.hlsl", "target": "ps_2_0", "entrypoint": "DefaultPS" },
     { "name": "DefaultPlasticHQFS", "source": "plastic.hlsl", "target": "ps_2_a", "entrypoint": "DefaultPS", "defines": "PIN_HQ" },
@@ -128,12 +132,17 @@
     { "name": "SSAOCompositVS", "source": "ssao.hlsl", "target": "vs_1_1", "entrypoint": "ssaoComposit_vs", "exclude": "glsles" },
     { "name": "SSAOCompositFS", "source": "ssao.hlsl", "target": "ps_2_a", "entrypoint": "ssaoComposit_ps", "exclude": "glsles" },
 
-    { "name": "PassThroughVS", "source": "glow.hlsl", "target": "vs_1_1", "entrypoint": "passThrough_vs"},
-    { "name": "PassThroughFS", "source": "glow.hlsl", "target": "ps_2_0", "entrypoint": "passThrough_ps"},
-    { "name": "GlowApplyFS", "source": "glow.hlsl", "target": "ps_2_a", "entrypoint": "glowApply_ps", "exclude": "glsles" },
-    { "name": "BlurFS", "source": "glow.hlsl", "target": "ps_2_a", "entrypoint": "blur_ps", "exclude": "glsles" },
-    { "name": "DownSample4x4VS", "source": "glow.hlsl", "target": "vs_1_1", "entrypoint": "downsample4x4_vs", "exclude": "glsles" },
-    { "name": "DownSample4x4GlowFS", "source": "glow.hlsl", "target": "ps_2_0", "entrypoint": "downSample4x4Glow_ps", "exclude": "glsles" },
+    { "name": "PassThroughVS", "source": "screenspace.hlsl", "target": "vs_1_1", "entrypoint": "passThrough_vs"},
+    { "name": "PassThroughFS", "source": "screenspace.hlsl", "target": "ps_2_0", "entrypoint": "passThrough_ps"},
+    { "name": "GlowApplyFS", "source": "screenspace.hlsl", "target": "ps_2_a", "entrypoint": "glowApply_ps", "exclude": "glsles" },
+    { "name": "DownSample4x4VS", "source": "screenspace.hlsl", "target": "vs_1_1", "entrypoint": "downsample4x4_vs", "exclude": "glsles" },
+    { "name": "DownSample4x4GlowFS", "source": "screenspace.hlsl", "target": "ps_2_0", "entrypoint": "downSample4x4Glow_ps", "exclude": "glsles" },
+    { "name": "ShadowBlurFS", "source": "screenspace.hlsl", "target": "ps_2_0", "entrypoint": "ShadowBlurPS" },
+
+    { "name": "Blur3FS", "source": "screenspace.hlsl", "target": "ps_2_a", "entrypoint": "blur3_ps", "exclude": "glsles" },
+    { "name": "Blur5FS", "source": "screenspace.hlsl", "target": "ps_2_a", "entrypoint": "blur5_ps", "exclude": "glsles" },
+    { "name": "Blur7FS", "source": "screenspace.hlsl", "target": "ps_2_a", "entrypoint": "blur7_ps", "exclude": "glsles" },
+    { "name": "ImageProcessFS", "source": "screenspace.hlsl", "target": "ps_2_0", "entrypoint": "imageProcess_ps", "exclude": "glsles" },
 
     { "name": "GBufferResolveVS", "source" : "gbuffer.hlsl", "target" : "vs_2_0", "entrypoint" : "gbufferVS" },
     { "name": "GBufferResolveFS", "source" : "gbuffer.hlsl", "target" : "ps_2_0", "entrypoint" : "gbufferPS" },

@@ -2,12 +2,12 @@
 
 struct Appdata
 {
-    float4 Position	    : POSITION;
+    ATTR_INT4 Position	: POSITION;
+
     ATTR_INT4 Normal	: NORMAL;
 
     ATTR_INT4 Material0	: TEXCOORD0;
     ATTR_INT4 Material1	: TEXCOORD1;
-    ATTR_INT4 Material2	: TEXCOORD2;
 };
 
 struct VertexOutput
@@ -37,14 +37,14 @@ WORLD_MATRIX_ARRAY(WorldMatrixArray, 72);
 
 uniform float4 LayerScale;
 
-float4 getUV(float3 position, ATTR_INT4 material)
+float4 getUV(float3 position, ATTR_INT material, ATTR_INT projection, float seed)
 {
-	float3 u = WorldMatrixArray[0 + int(material.y)].xyz;
-	float3 v = WorldMatrixArray[18 + int(material.y)].xyz;
+	float3 u = WorldMatrixArray[1 + int(projection)].xyz;
+	float3 v = WorldMatrixArray[19 + int(projection)].xyz;
 
-    float4 m = WorldMatrixArray[36 + int(material.x)];
+    float4 m = WorldMatrixArray[37 + int(material)];
 
-    float2 uv = float2(dot(position, u), dot(position, v)) * m.x + m.y * material.zw;
+    float2 uv = float2(dot(position, u), dot(position, v)) * m.x + m.y * float2(seed, floor(seed * 2.6651441f));
 
     return float4(uv, m.zw);
 }
@@ -53,25 +53,29 @@ VertexOutput TerrainVS(Appdata IN)
 {
     VertexOutput OUT = (VertexOutput)0;
     
-	float3 posWorld = IN.Position.xyz * 4;
+	float3 posWorld = IN.Position.xyz * WorldMatrixArray[0].w + WorldMatrixArray[0].xyz;
     float3 normalWorld = IN.Normal.xyz * (1.0 / 127.0) - 1.0;
 
 	OUT.HPosition = mul(G(ViewProjection), float4(posWorld, 1));
 
     OUT.LightPosition_Fog = float4(lgridPrepareSample(lgridOffset(posWorld, normalWorld)), (G(FogParams).z - OUT.HPosition.w) * G(FogParams).w);
 
-    OUT.PosLightSpace = getPosInLightSpace(posWorld);
+    OUT.PosLightSpace = shadowPrepareSample(posWorld);
 
-    OUT.Uv0 = getUV(IN.Position.xyz, IN.Material0);
-    OUT.Uv1 = getUV(IN.Position.xyz, IN.Material1);
-    OUT.Uv2 = getUV(IN.Position.xyz, IN.Material2);
+    OUT.Uv0 = getUV(posWorld, IN.Material0.x, IN.Material1.x, IN.Normal.w);
+    OUT.Uv1 = getUV(posWorld, IN.Material0.y, IN.Material1.y, IN.Material0.w);
+    OUT.Uv2 = getUV(posWorld, IN.Material0.z, IN.Material1.z, IN.Material1.w);
 
-    OUT.Weights = abs(IN.Normal.www - float3(0, 1, 2)) < 0.1;
+#if defined(GLSLES) && !defined(GL3) // iPad2 workaround
+    OUT.Weights = abs(IN.Position.www - float3(0, 1, 2)) < 0.1;
+#else
+    OUT.Weights = IN.Position.www == float3(0, 1, 2);
+#endif
 
 #ifdef PIN_HQ
 	OUT.Normal = normalWorld;
     OUT.View_Depth = float4(G(CameraPosition) - posWorld, OUT.HPosition.w);
-	OUT.Tangents = float3(IN.Material0.y, IN.Material1.y, IN.Material2.y) > 7.5; // side vs top
+	OUT.Tangents = float3(IN.Material1.xyz) > 7.5; // side vs top
 #else
     float ndotl = dot(normalWorld, -G(Lamp0Dir));
     float3 diffuse = max(ndotl, 0) * G(Lamp0Color) + max(-ndotl, 0) * G(Lamp1Color);
@@ -88,6 +92,7 @@ TEX_DECLARE2D(SpecularMap, 2);
 TEX_DECLARECUBE(EnvMap, 3);
 LGRID_SAMPLER(LightMap, 4);
 TEX_DECLARE2D(LightMapLookup, 5);
+TEX_DECLARE2D(ShadowMap, 6);
 
 float4 sampleMap(TEXTURE_IN_2D(s), float4 uv)
 {
@@ -120,7 +125,7 @@ void TerrainPS(VertexOutput IN,
     out float4 oColor0: COLOR0)
 {
     float4 light = lgridSample(TEXTURE(LightMap), TEXTURE(LightMapLookup), IN.LightPosition_Fog.xyz);
-    float shadow = getBlobShadow(IN.PosLightSpace) * light.a;
+    float shadow = shadowSample(TEXTURE(ShadowMap), IN.PosLightSpace, light.a);
 
 	float3 w = IN.Weights.xyz;
 

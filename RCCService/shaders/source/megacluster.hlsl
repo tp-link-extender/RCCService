@@ -74,7 +74,7 @@ VertexOutput MegaClusterVS(Appdata IN)
     OUT.Diffuse_Blend = float4(diffuse, blend);
 #endif
 
-    OUT.PosLightSpace = getPosInLightSpace(posWorld);
+    OUT.PosLightSpace = shadowPrepareSample(posWorld);
 
 	return OUT;
 }
@@ -85,6 +85,7 @@ TEX_DECLARE2D(NormalMap, 2);
 TEX_DECLARE2D(SpecularMap, 3);
 LGRID_SAMPLER(LightMap, 4);
 TEX_DECLARE2D(LightMapLookup, 5);
+TEX_DECLARE2D(ShadowMap, 6);
 
 void MegaClusterPS(VertexOutput IN,
 #ifdef PIN_GBUFFER
@@ -96,7 +97,7 @@ void MegaClusterPS(VertexOutput IN,
     float4 low = tex2D(DiffuseLowMap, IN.UvLow_EdgeDistance2.xy);
 
     float4 light = lgridSample(TEXTURE(LightMap), TEXTURE(LightMapLookup), IN.LightPosition_Fog.xyz);
-    float shadow = getBlobShadow(IN.PosLightSpace) * light.a;
+    float shadow = shadowSample(TEXTURE(ShadowMap), IN.PosLightSpace, light.a);
 
 #ifdef PIN_HQ
     float3 albedo = lerp(high.rgb, low.rgb, saturate1(IN.Normal_Blend.a));

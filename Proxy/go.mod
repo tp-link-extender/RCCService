@@ -14,7 +14,7 @@ require (
 	github.com/kovidgoyal/go-shm v1.0.0 // indirect
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect
 	golang.org/x/image v0.41.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
 
 replace github.com/tp-link-extender/RCCService/Shared => ../Shared

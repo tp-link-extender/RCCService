@@ -18,7 +18,11 @@ Surface surfaceShader(SurfaceInput IN, float2 fade2)
     float4 studs = tex2D(DiffuseMap, IN.UvStuds);
     float3 normal = nmapUnpack(tex2D(NormalMap, IN.UvStuds));
 
+#ifdef GLSLES
+    float3 noise = float3(0, 0, 1);
+#else
     float3 noise = nmapUnpack(tex2D(NormalDetailMap, IN.Uv * (CFG_TEXTURE_TILING)));
+#endif
 
     float noiseScale = saturate0(IN.Color.a * 2 * (CFG_BUMP_INTENSITY) - 1 * (CFG_BUMP_INTENSITY));
 
@@ -31,7 +35,7 @@ Surface surfaceShader(SurfaceInput IN, float2 fade2)
     normal.xy *= fade;
 
     Surface surface = (Surface)0;
-    surface.albedo = IN.Color.rgb * studs.rgb * 2;
+    surface.albedo = IN.Color.rgb * (studs.r * 2);
     surface.normal = normal;
     surface.specular = (CFG_SPECULAR);
     surface.gloss = (CFG_GLOSS);

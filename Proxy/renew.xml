@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope
+	xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+	xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+	xmlns:ns1="http://roblox.com/">
+	<soap:Body>
+		<ns1:RenewLease>
+			<ns1:jobID>_TASK_ID</ns1:jobID>
+			<ns1:renewSeconds>_RENEW_SECONDS</ns1:renewSeconds>
+		</ns1:RenewLease>
+	</soap:Body>
+</soap:Envelope>

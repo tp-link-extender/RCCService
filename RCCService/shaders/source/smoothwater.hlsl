@@ -21,12 +21,12 @@
 // Shader code
 struct Appdata
 {
-    float4 Position	    : POSITION;
+	ATTR_INT4 Position	: POSITION;
+
     ATTR_INT4 Normal	: NORMAL;
 
     ATTR_INT4 Material0	: TEXCOORD0;
     ATTR_INT4 Material1	: TEXCOORD1;
-    ATTR_INT4 Material2	: TEXCOORD2;
 };
 
 struct VertexOutput
@@ -56,16 +56,6 @@ uniform float4 WaveParams; // .x = frequency  .y = phase  .z = height  .w = lerp
 uniform float4 WaterColor; // deep water color
 uniform float4 WaterParams; // .x = refraction depth scale, .y = refraction depth offset
 
-float2 getUV(float3 position, ATTR_INT4 material)
-{
-	float3 u = WorldMatrixArray[0 + int(material.y)].xyz;
-	float3 v = WorldMatrixArray[18 + int(material.y)].xyz;
-
-    float2 uv = float2(dot(position, u), dot(position, v)) * CFG_TEXTURE_TILING + CFG_TEXTURE_DETILING * material.zw;
-
-    return uv;
-}
-
 float3 displacePosition(float3 position, float waveFactor)
 {
 	float x = sin((position.z - position.x) * WaveParams.x - WaveParams.y);
@@ -89,17 +79,30 @@ float4 clipToScreen(float4 pos)
 	return pos;
 }
 
+float2 getUV(float3 position, ATTR_INT projection, float seed)
+{
+	float3 u = WorldMatrixArray[1 + int(projection)].xyz;
+	float3 v = WorldMatrixArray[19 + int(projection)].xyz;
+
+    float2 uv = float2(dot(position, u), dot(position, v)) * (0.25 * CFG_TEXTURE_TILING) + CFG_TEXTURE_DETILING * float2(seed, floor(seed * 2.6651441f));
+
+    return uv;
+}
+
 VertexOutput WaterVS(Appdata IN)
 {
     VertexOutput OUT = (VertexOutput)0;
     
-	float3 posWorld = IN.Position.xyz * 4;
+	float3 posWorld = IN.Position.xyz * WorldMatrixArray[0].w + WorldMatrixArray[0].xyz;
     float3 normalWorld = IN.Normal.xyz * (1.0 / 127.0) - 1.0;
 
-    float3 weights = abs(IN.Normal.www - float3(0, 1, 2)) < 0.1;
+#if defined(GLSLES) && !defined(GL3) // iPad2 workaround
+    float3 weights = abs(IN.Position.www - float3(0, 1, 2)) < 0.1;
+#else
+    float3 weights = IN.Position.www == float3(0, 1, 2);
+#endif
 
-    float layer = weights.x * IN.Material0.x + weights.y * IN.Material1.x + weights.z * IN.Material2.x;
-    float waveFactor = layer / 255;
+    float waveFactor = dot(weights, IN.Material0.xyz) * (1.0 / 255.0);
 
 #ifdef PIN_HQ
 	float fade = saturate0(1 - dot(posWorld - G(CameraPosition), -G(ViewDir).xyz) * G(FadeDistance_GlowFactor).y);
@@ -111,16 +114,16 @@ VertexOutput WaterVS(Appdata IN)
 
     OUT.LightPosition_Fog = float4(lgridPrepareSample(lgridOffset(posWorld, normalWorld)), (G(FogParams).z - OUT.HPosition.w) * G(FogParams).w);
 
-    OUT.Uv0 = getUV(IN.Position.xyz, IN.Material0);
-    OUT.Uv1 = getUV(IN.Position.xyz, IN.Material1);
-    OUT.Uv2 = getUV(IN.Position.xyz, IN.Material2);
+    OUT.Uv0 = getUV(posWorld, IN.Material1.x, IN.Normal.w);
+    OUT.Uv1 = getUV(posWorld, IN.Material1.y, IN.Material0.w);
+    OUT.Uv2 = getUV(posWorld, IN.Material1.z, IN.Material1.w);
 
     OUT.Weights_Wave.xyz = weights;
     OUT.Weights_Wave.w = waveFactor;
 
 	OUT.Normal = normalWorld;
     OUT.View_Depth = float4(G(CameraPosition) - posWorld, OUT.HPosition.w);
-	OUT.Tangents = float3(IN.Material0.y, IN.Material1.y, IN.Material2.y) > 7.5; // side vs top
+	OUT.Tangents = float3(IN.Material1.xyz) > 7.5; // side vs top
 
 #ifdef PIN_HQ
 	OUT.PositionScreen = clipToScreen(OUT.HPosition);

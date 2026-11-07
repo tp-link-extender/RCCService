@@ -1,7 +1,7 @@
 #include "globals.h"
 
 // GLSLES has limited number of vertex shader registers so we have to use less bones
-#ifdef GLSLES
+#if defined(GLSLES) && !defined(GL3)
 #define MAX_BONE_COUNT 32
 #else
 #define MAX_BONE_COUNT 72
@@ -39,10 +39,12 @@ float saturate1(float v) { return saturate(v); }
 		#define ATTR_INT4 float4
 		#define ATTR_INT3 float3
 		#define ATTR_INT2 float2
+		#define ATTR_INT float
 	#else
 		#define ATTR_INT4 int4
 		#define ATTR_INT3 int3
 		#define ATTR_INT2 int2
+		#define ATTR_INT int
 	#endif
 #else
     #define TEX_DECLARE2D(name, reg) SamplerState name##Sampler: register(s##reg); Texture2D<float4> name##Texture: register(t##reg)
@@ -67,19 +69,12 @@ float saturate1(float v) { return saturate(v); }
     #define ATTR_INT4 int4
     #define ATTR_INT3 int3
     #define ATTR_INT2 int2
+	#define ATTR_INT int
 #endif
-
-float2 sampleLA8Texture(TEXTURE_IN_2D(tex), float2 uv)
-{
-#ifdef DX11
-    return tex2D(tex, uv).rg;
-#else
-    return tex2D(tex, uv).ba;
-#endif
-}
 
 #if defined(GLSLES) || defined(PIN_WANG_FALLBACK)
-    void getWang(TEXTURE_IN_2D(s), float2 uv, float tiling, out float2 wangUv, out float4 wangUVDerivatives)
+    #define TEXTURE_WANG(name) 0
+    void getWang(float unused, float2 uv, float tiling, out float2 wangUv, out float4 wangUVDerivatives)
     {
         wangUv = uv * WANG_SUBSET_SCALE;
         wangUVDerivatives = float4(0,0,0,0);    // not used in this mode 
@@ -89,6 +84,7 @@ float2 sampleLA8Texture(TEXTURE_IN_2D(tex), float2 uv)
         return tex2D(s,uv);
     }
 #else
+    #define TEXTURE_WANG(name) TEXTURE(name)
     void getWang(TEXTURE_IN_2D(s), float2 uv, float tiling, out float2 wangUv, out float4 wangUVDerivatives)
     {
     #ifndef WIN_MOBILE
@@ -106,7 +102,11 @@ float2 sampleLA8Texture(TEXTURE_IN_2D(tex), float2 uv)
         float2 wangUV = wangBase / idxTexSize;
     #endif
 
-        float2 wang = sampleLA8Texture(TEXTURE(s), wangUV);
+    #if defined(DX11) || defined(GL3)
+        float2 wang = tex2D(s, wangUV).rg;
+    #else
+        float2 wang = tex2D(s, wangUV).ba;
+    #endif
 
         wangUVDerivatives = float4(ddx(wangBase*0.25), ddy(wangBase*0.25));
 
@@ -140,47 +140,6 @@ float4 gbufferPack(float depth, float3 diffuse, float3 specular, float fog)
 	return result;
 }
 
-float3 getPosInLightSpace(float3 posIn)
-{
-    float3 lightToWorld = posIn - G(BlobShadowData0).xyz;
-    return float3(dot(G(Lamp0Right), lightToWorld), dot(G(Lamp0Up), lightToWorld), dot(G(Lamp0Dir), lightToWorld));
-}
-
-float getBlobShadow(float3 lightSpacePos, float4 blobData)
-{
-    float distSq = dot(lightSpacePos.xy, lightSpacePos.xy);
-
-    // OH MY GOD! a BRANCH? Why? Because this produces a better assembly over other solution
-    float projDistScaled = lightSpacePos.z * 0.04;
-    if (lightSpacePos.z < 0)     
-        projDistScaled = lightSpacePos.z * -0.3;
-
-    return min(1, distSq * G(OutlineBrightness_ShadowInfo).z + projDistScaled + blobData.a);
-}
-
-float getSingleBlobShadowOrigin(float3 lightSpacePos, float4 blobData)
-{
-    lightSpacePos.y *= G(OutlineBrightness_ShadowInfo).w;
-    return getBlobShadow(lightSpacePos, blobData);
-}
-
-float getSingleBlobShadow(float3 lightSpacePos, float4 blobData)
-{
-    return getBlobShadow(lightSpacePos - blobData.xyz, blobData);
-}
-
-float getBlobShadow(float3 lightSpacePos)
-{     
-    #ifdef PIN_HQ
-        float shadow = min(getSingleBlobShadowOrigin(lightSpacePos, G(BlobShadowData0)), getSingleBlobShadow(lightSpacePos, G(BlobShadowData1)));
-        shadow = min(getSingleBlobShadow(lightSpacePos, G(BlobShadowData2)), shadow);
-        shadow = min(getSingleBlobShadow(lightSpacePos, G(BlobShadowData3)), shadow);
-        return shadow;
-    #else
-        return getSingleBlobShadowOrigin(lightSpacePos, G(BlobShadowData0));
-    #endif 
-}
-
 float3 lgridOffset(float3 v, float3 n)
 {
     // cells are 4 studs in size
@@ -197,7 +156,7 @@ float3 lgridPrepareSample(float3 c)
     return c.yxz * G(LightConfig0).xyz + G(LightConfig1).xyz;
 }
 
-#ifdef GLSLES
+#if defined(GLSLES) && !defined(GL3)
 #define LGRID_SAMPLER(name, register) TEX_DECLARE2D(name, register)
 
 float4 lgridSample(TEXTURE_IN_2D(t), TEXTURE_IN_2D(lut), float3 data)
@@ -266,3 +225,28 @@ float3 terrainNormal(float4 tnp0, float4 tnp1, float4 tnp2, float3 w, float3 nor
 	return normalize(tangent * tn.x + bitangent * tn.y + normal * tn.z);
 }
 
+float3 shadowPrepareSample(float3 p)
+{
+	float4 c = float4(p, 1);
+
+	return float3(dot(G(ShadowMatrix0), c), dot(G(ShadowMatrix1), c), dot(G(ShadowMatrix2), c));
+}
+
+float shadowDepth(float3 lpos)
+{
+	return lpos.z;
+}
+
+float shadowStep(float d, float z)
+{
+	// saturate returns 1 for z in [0.1..0.9]; it fades to 0 as z approaches 0 or 1
+	return step(d, z) * saturate(9 - 20 * abs(z - 0.5));
+}
+
+float shadowSample(TEXTURE_IN_2D(map), float3 lpos, float lightShadow)
+{
+    float2 smDepth = tex2D(map, lpos.xy).rg;
+	float smShadow = shadowStep(smDepth.x, shadowDepth(lpos));
+
+	return (1 - smShadow * smDepth.y * G(OutlineBrightness_ShadowInfo).w) * lightShadow;
+}

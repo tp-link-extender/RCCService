@@ -95,7 +95,7 @@ function onRunning(speed)
 	end
 	if speed>0.5 then
 		sRunning:Play()
-		sRunning.Pitch = 1.6
+		sRunning.Pitch = speed / 8.0
 	else
 		sRunning:Stop()
 	end
