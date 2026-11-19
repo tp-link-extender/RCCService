@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -962,7 +963,7 @@ func serveInternalScript(w http.ResponseWriter, r *http.Request) {
 
 	serveScripts.RUnlock()
 
-	if !ok || r.URL.Query().Get("t") != s.token {
+	if !ok || subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("t")), []byte(s.token)) != 1 {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
