@@ -67,8 +67,13 @@ type (
 
 	Gameservers struct {
 		version string
+
+		// handlers and trackers run concurrently, so the map is only touched under serversMu
+		serversMu sync.Mutex
 		servers map[int]*Gameserver
-		serverAdded chan int
+
+		// closed and replaced whenever a server is added, waking everything waiting for one
+		serverAdded chan struct{}
 
 		// statuses pushed between a hosted job starting and its tracker registering
 		// the server; flushed on registration
@@ -273,6 +278,46 @@ func (gs *Gameservers) deferStatus(id int, data []string) {
 	gs.pendingMu.Unlock()
 }
 
+// server returns the server registered for id (nil if none), and a channel closed when the next server is added
+func (gs *Gameservers) server(id int) (*Gameserver, <-chan struct{}) {
+	gs.serversMu.Lock()
+
+	defer gs.serversMu.Unlock()
+
+	return gs.servers[id], gs.serverAdded
+}
+
+// addServer registers a server and wakes everything waiting for one
+func (gs *Gameservers) addServer(id int, server *Gameserver) {
+	gs.serversMu.Lock()
+
+	defer gs.serversMu.Unlock()
+
+	gs.servers[id] = server
+
+	close(gs.serverAdded)
+
+	gs.serverAdded = make(chan struct{})
+}
+
+// waitForServer returns the server registered for id, waiting up to timeout for it to be added
+func (gs *Gameservers) waitForServer(id int, timeout time.Duration) *Gameserver {
+	deadline := time.After(timeout)
+
+	for {
+		server, added := gs.server(id)
+		if server != nil {
+			return server
+		}
+
+		select {
+		case <-added:
+		case <-deadline:
+			return nil
+		}
+	}
+}
+
 func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
 	// don't check the IP, this route is public
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -288,30 +333,8 @@ func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
 	// Return events from statusChanged as SSE
 	const wait = 30 * time.Second
 
-	server, exists := gs.servers[id]
-	if !exists {
-		// wait for server to be started
-		Log(fmt.Sprintf("[stream] %d waiting for server to be started", id))
-
-		start := time.Now()
-
-	loop:
-		for time.Since(start) < wait {
-			select {
-			case <-gs.serverAdded:
-				server, exists = gs.servers[id]
-
-				if exists {
-					Log(fmt.Sprintf("[stream] %d server started, proceeding", id))
-					break loop
-				}
-			case <-time.After(wait):
-				break loop
-			}
-		}
-	}
-
-	if !exists {
+	server := gs.waitForServer(id, wait)
+	if server == nil {
 		http.Error(w, "Gameserver not found for this ID", http.StatusNotFound)
 		return
 	}
@@ -356,7 +379,7 @@ func NewGameservers(version string) *Gameservers {
 	return &Gameservers{
 		version: version,
 		servers: make(map[int]*Gameserver),
-		serverAdded: make(chan int, 100),
+		serverAdded: make(chan struct{}),
 		pending: make(map[int][][]string),
 	}
 }
@@ -481,11 +504,15 @@ func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gs.serversMu.Lock()
+
 	serverInfo := make([][2]any, 0, len(gs.servers))
 
 	for id, server := range gs.servers {
 		serverInfo = append(serverInfo, [2]any{id, &server.GameserverInfo})
 	}
+
+	gs.serversMu.Unlock()
 
 	// serverInfo = append(serverInfo, [2]any{-1, GameserverInfo{Pid: os.Getpid(), StartTime: time.Now().UnixMilli()}}) // test
 	if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
@@ -523,20 +550,7 @@ func (gs *Gameservers) statusPushRoute(w http.ResponseWriter, r *http.Request) {
 	// the push loop closes fast - statuses can arrive before startRoute's tracker even
 	// registers the server, so apply it directly if the server is here, otherwise
 	// defer it (Track flushes deferred statuses on registration)
-	var server *Gameserver
-
-	start := time.Now()
-
-	for time.Since(start) < 2*time.Second {
-		server = gs.servers[id]
-
-		if server != nil {
-			break
-		}
-
-		time.Sleep(250 * time.Millisecond)
-	}
-
+	server := gs.waitForServer(id, 2*time.Second)
 	if server == nil {
 		Log(c.InYellow(fmt.Sprintf("[hoststatus] %d server not yet tracked, deferring status: %s", id, status)))
 		gs.deferStatus(id, data)
@@ -561,8 +575,8 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 
 	Log(fmt.Sprintf("[status] %d request received", id))
 
-	server, exists := gs.servers[id]
-	if !exists || server.Status == Closed {
+	server, _ := gs.server(id)
+	if server == nil || server.Status == Closed {
 		Log(fmt.Sprintf("[status] %d not running", id))
 		http.Error(w, "Gameserver not running for this ID", http.StatusNotFound)
 
@@ -1172,8 +1186,8 @@ func (gs *Gameservers) closeRoute(w http.ResponseWriter, r *http.Request) {
 
 	Log(fmt.Sprintf("[close] %d request received", id))
 
-	server, exists := gs.servers[id]
-	if !exists || server.Status == Closed {
+	server, _ := gs.server(id)
+	if server == nil || server.Status == Closed {
 		return
 	}
 
@@ -1313,11 +1327,8 @@ func TrackNetwork(server *Gameserver, id int) {
 }
 
 func (gs *Gameservers) Track(server *Gameserver, id int) {
-	gs.servers[id] = server
-
+	gs.addServer(id, server)
 	gs.flushStatuses(id, server)
-
-	gs.serverAdded <- id
 
 	Log(fmt.Sprintf("[track] %d - tracking started", id))
 
@@ -1364,7 +1375,7 @@ func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
 
 	Log(fmt.Sprintf("[start] %d request received", id))
 
-	if s, exists := gs.servers[id]; exists && s.Status != Closed {
+	if s, _ := gs.server(id); s != nil && s.Status != Closed {
 		return
 	}
 
