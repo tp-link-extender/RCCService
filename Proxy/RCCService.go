@@ -906,7 +906,12 @@ func (p *pool) Submit(id, kind, soap string) error {
 		}
 	}
 
+	// a close request for the same ID may have removed the job while an instance was found
 	j := p.getJob(id)
+	if j == nil {
+		return errors.New("job " + id + " was closed before it started")
+	}
+
 	j.instance = instance
 
 	instance.mu.Lock()
