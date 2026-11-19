@@ -1359,7 +1359,7 @@ func (gs *Gameservers) Track(server *Gameserver, id int) {
 	}
 
 	unregisterServeScript(id)
-	server.SetStatus(Closed)
+	server.Stop() // not just SetStatus(Closed), so the game's UDP proxy releases its port
 }
 
 func (gs *Gameservers) startRoute(w http.ResponseWriter, r *http.Request) {
