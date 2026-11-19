@@ -963,7 +963,7 @@ func hostRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InBlue(fmt.Sprintf("[host] %s - host script received (%d chars), first line: %q", id, len(script), firstLine)))
 
 	currentTemplate := strings.ReplaceAll(hostTemplate, "_TASK_ID", id)
-	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", os.Getenv("HOST_EXPIRATION"))
+	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", jobPool.expiration) // not the raw env, which uses 0 for "never"
 	currentTemplate = strings.ReplaceAll(currentTemplate, "_HOST_SCRIPT", script+"  ")
 
 	if err := jobPool.Submit(id, "host", currentTemplate); err != nil {
