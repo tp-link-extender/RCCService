@@ -484,12 +484,34 @@ func (gs *Gameservers) flushStatuses(id int, server *Gameserver) {
 	}
 }
 
-func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
-	allowedIPs := map[string]struct{}{"[::1]": {}, "127.0.0.1": {}, os.Getenv("IPV4"): {}, os.Getenv("IPV6"): {}}
-	ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
+// allowedIP reports whether an address is this machine's, or the IPV4 or IPV6 one configured
+func allowedIP(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
 
-	if _, ok := allowedIPs[ip]; !ok {
-		Log(c.InRed("IP " + ip + " is not allowed! (" + route + ")"))
+	if ip.IsLoopback() {
+		return true
+	}
+
+	for _, name := range []string{"IPV4", "IPV6"} {
+		if configured := net.ParseIP(strings.Trim(os.Getenv(name), "[]")); configured != nil && configured.Equal(ip) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func checkIP(r *http.Request, w http.ResponseWriter, route string) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+
+	if !allowedIP(host) {
+		Log(c.InRed("IP " + host + " is not allowed! (" + route + ")"))
 		w.WriteHeader(http.StatusForbidden)
 
 		return false
@@ -516,12 +538,11 @@ func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 	gs.serversMu.Unlock()
 
 	// serverInfo = append(serverInfo, [2]any{-1, GameserverInfo{Pid: os.Getpid(), StartTime: time.Now().UnixMilli()}}) // test
-	if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
-		http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(serverInfo); err != nil {
+		Log(c.InRed("Failed to encode server list: " + err.Error()))
+	}
 }
 
 // Pushed status updates for a gameserver (relayed by the RCC proxy's hostping route,
@@ -584,12 +605,11 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(&server.GameserverInfo); err != nil {
-		http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(&server.GameserverInfo); err != nil {
+		Log(c.InRed(fmt.Sprintf("[status] %d failed to encode: %s", id, err.Error())))
+	}
 }
 
 // siteURL is where the Site's rbxclient routes are, overridable with SITE_URL
