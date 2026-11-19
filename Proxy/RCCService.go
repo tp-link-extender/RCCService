@@ -13,6 +13,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/subtle"
 	_ "embed"
 	"encoding/base64"
 	"encoding/binary"
@@ -72,7 +73,13 @@ type (
 	}
 )
 
-const exePath = "./RCCService/RCCService.exe"
+const (
+	exePath = "./RCCService/RCCService.exe"
+
+	// render pings carry base64 images, so they're far bigger than scripts
+	maxPingBytes = 64 << 20
+	maxScriptBytes = 8 << 20
+)
 
 var (
 	client http.Client
@@ -144,21 +151,42 @@ func Logr(txt string) {
 	fmt.Print("\r", time.Now().Format("2006/01/02, 15:04:05  "), txt) // fmt.Print don't add spaces between args
 }
 
+// remoteIP is the address a request came from, without its port
+func remoteIP(r *http.Request) net.IP {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return nil
+	}
+
+	return net.ParseIP(host)
+}
+
+// fromLocal reports whether a request came from this machine, or also from the configured IP when withConfigured is set
+func fromLocal(r *http.Request, withConfigured bool) bool {
+	ip := remoteIP(r)
+	if ip == nil {
+		return false
+	}
+
+	if ip.IsLoopback() {
+		return true
+	}
+
+	configured := net.ParseIP(strings.Trim(os.Getenv("IP"), "[]"))
+
+	return withConfigured && configured != nil && configured.Equal(ip)
+}
+
 func checkAuth(r *http.Request) bool {
 	key := os.Getenv("PROXY_KEY")
 	if key == "" {
 		// backwards compat: fall back to the render route's IP whitelisting
-		ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
-		ip = strings.Trim(ip, "[]")
-
-		return net.ParseIP(ip).IsLoopback() || ip == os.Getenv("IP")
+		return fromLocal(r, true)
 	}
 
-	if r.Header.Get("Authorization") != "Bearer "+key {
-		return false
-	}
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 
-	return true
+	return ok && subtle.ConstantTimeCompare([]byte(token), []byte(key)) == 1
 }
 
 // findPid looks up the pid of the RCCService process running a -Console <port>
@@ -438,23 +466,30 @@ func closeHostRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InYellow("Host job " + id + " closed"))
 }
 
-func readPingBody(r *http.Request) ([]byte, error) {
-	readBody, err := io.ReadAll(r.Body)
+func readPingBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	readBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxPingBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read request body: %w", err)
 	}
 
 	// if the body is gzipped, unzip it
-	if strings.HasPrefix(string(readBody), "\x1f\x8b") {
-		reader, err := gzip.NewReader(bytes.NewReader(readBody))
-		if err != nil {
-			return nil, fmt.Errorf("create gzip reader: %w", err)
-		}
+	if !bytes.HasPrefix(readBody, []byte("\x1f\x8b")) {
+		return readBody, nil
+	}
 
-		readBody, err = io.ReadAll(reader)
-		if err != nil {
-			return nil, fmt.Errorf("read gzipped request body: %w", err)
-		}
+	reader, err := gzip.NewReader(bytes.NewReader(readBody))
+	if err != nil {
+		return nil, fmt.Errorf("create gzip reader: %w", err)
+	}
+
+	// limited after unzipping too, so a small gzip bomb can't expand without bound
+	readBody, err = io.ReadAll(io.LimitReader(reader, maxPingBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read gzipped request body: %w", err)
+	}
+
+	if len(readBody) > maxPingBytes {
+		return nil, errors.New("gzipped request body is too large")
 	}
 
 	return readBody, nil
@@ -465,17 +500,14 @@ func readPingBody(r *http.Request) ([]byte, error) {
 func hostpingIdRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InBlue("Received host ping callback"))
 
-	ips := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
-	ips = strings.Trim(ips, "[]")
-
-	if ip := net.ParseIP(ips); !net.IPv6loopback.Equal(ip) && !net.IPv4(127, 0, 0, 1).Equal(ip) {
-		Log(c.InRed("IP " + ips + " is not allowed! (hostping)"))
+	if !fromLocal(r, false) {
+		Log(c.InRed("IP " + r.RemoteAddr + " is not allowed! (hostping)"))
 		w.WriteHeader(http.StatusForbidden)
 
 		return
 	}
 
-	readBody, err := readPingBody(r)
+	readBody, err := readPingBody(w, r)
 	if err != nil {
 		Log(c.InRed("Failed to read host ping body: " + err.Error()))
 		w.WriteHeader(http.StatusBadRequest)
@@ -527,18 +559,14 @@ func hostpingIdRoute(w http.ResponseWriter, r *http.Request) {
 func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InBlue("Received ping callback"))
 
-	// remove port from IP (can't just split by ":" because of IPv6)
-	ips := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
-	ips = strings.Trim(ips, "[]") // remove brackets from IPv6
-
-	if ip := net.ParseIP(ips); !net.IPv6loopback.Equal(ip) && !net.IPv4(127, 0, 0, 1).Equal(ip) {
-		Log(c.InRed("IP " + ips + " is not allowed! (ping)"))
+	if !fromLocal(r, false) {
+		Log(c.InRed("IP " + r.RemoteAddr + " is not allowed! (ping)"))
 		w.WriteHeader(http.StatusForbidden)
 
 		return
 	}
 
-	readBody, err := readPingBody(r)
+	readBody, err := readPingBody(w, r)
 	if err != nil {
 		Log(c.InRed("Failed to read ping body: " + err.Error()))
 		w.WriteHeader(http.StatusBadRequest)
@@ -560,6 +588,13 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 	case "Rendering":
 		Log(c.InGreen("Render " + id + " is rendering"))
 	case "Completed":
+		if len(data) < 2 {
+			Log(c.InRed("Render " + id + " completed without an image"))
+			w.WriteHeader(http.StatusBadRequest)
+
+			return
+		}
+
 		var (
 			wg sync.WaitGroup
 
@@ -947,7 +982,7 @@ func hostRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	loadScript, err := io.ReadAll(r.Body)
+	loadScript, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxScriptBytes))
 	if err != nil {
 		Log(c.InRed("Failed to read host script: " + err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -980,15 +1015,14 @@ func hostRoute(w http.ResponseWriter, r *http.Request) {
 // ID route starts a render, coming from the Site
 func idRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InBlue("Received render request"))
-	// remove port from IP (can't just split by ":" because of IPv6)
-	if ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]; ip != os.Getenv("IP") && ip != "[::1]" {
-		Log(c.InRed("IP " + ip + " is not allowed! (render)"))
+	if !fromLocal(r, true) {
+		Log(c.InRed("IP " + r.RemoteAddr + " is not allowed! (render)"))
 		w.WriteHeader(http.StatusForbidden)
 
 		return
 	}
 
-	loadScript, err := io.ReadAll(r.Body)
+	loadScript, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxScriptBytes))
 	if err != nil {
 		Log(c.InRed("Failed to read render script: " + err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
