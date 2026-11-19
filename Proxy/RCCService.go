@@ -127,13 +127,13 @@ Players.PlayerRemoving:connect(function(player)
 end)`
 )
 
-func Compress(b64 string, resolution int, name string, compressed *bytes.Buffer) error {
+func Compress(b64 string, resolution int, compressed *bytes.Buffer) error {
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return fmt.Errorf("failed to decode base64 of image: %w", err)
 	}
 
-	srcimg, err := imaging.Decode(strings.NewReader(string(data)))
+	srcimg, err := imaging.Decode(bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("failed to decode image from data: %w", err)
 	}
@@ -604,12 +604,12 @@ func pingIdRoute(w http.ResponseWriter, r *http.Request) {
 			bodyErr, headErr error
 		)
 		wg.Go(func() {
-			bodyErr = Compress(data[1], 420, "body", &body)
+			bodyErr = Compress(data[1], 420, &body)
 		})
 
 		if len(data) == 3 {
 			wg.Go(func() {
-				headErr = Compress(data[2], 150, "head", &head)
+				headErr = Compress(data[2], 150, &head)
 			})
 		}
 
