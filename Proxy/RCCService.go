@@ -69,7 +69,7 @@ type (
 		id, kind string // "render" or "host"
 		instance *rccInstance
 		stopRenew chan struct{}
-		closeOnce sync.Once
+		stopOnce, closeOnce sync.Once
 	}
 )
 
@@ -267,6 +267,13 @@ func (p *pool) freeRenderSlot(id string) {
 	p.deleteJob(id)
 }
 
+// stopRenewing ends a job's lease renewal. Crash cleanup, closing and failed submits can race to do this, and closing the channel twice would panic
+func (j *job) stopRenewing() {
+	j.stopOnce.Do(func() {
+		close(j.stopRenew)
+	})
+}
+
 // renewLoop keeps a hosting job's lease renewed while the pool holds it
 func (p *pool) renewLoop(j *job) {
 	interval := time.Duration(p.renewSeconds) * time.Second / 2
@@ -403,13 +410,7 @@ func (p *pool) CloseJob(id string) {
 	}
 
 	j.closeOnce.Do(func() {
-		if j.stopRenew != nil {
-			select {
-			case <-j.stopRenew:
-			default:
-				close(j.stopRenew)
-			}
-		}
+		j.stopRenewing()
 
 		instance := j.instance
 		if instance != nil {
@@ -802,13 +803,7 @@ func (i *rccInstance) run() {
 		for _, j := range lost {
 			jobPool.deleteJob(j.id)
 
-			if j.stopRenew != nil {
-				select {
-				case <-j.stopRenew:
-				default:
-					close(j.stopRenew)
-				}
-			}
+			j.stopRenewing()
 		}
 
 		if !alive {
@@ -882,12 +877,8 @@ func (p *pool) Submit(id, kind, soap string) error {
 	p.mu.Unlock()
 
 	cleanupJob := func() {
-		if j := p.getJob(id); j != nil && j.stopRenew != nil {
-			select {
-			case <-j.stopRenew:
-			default:
-				close(j.stopRenew)
-			}
+		if j := p.getJob(id); j != nil {
+			j.stopRenewing()
 		}
 
 		p.deleteJob(id)
