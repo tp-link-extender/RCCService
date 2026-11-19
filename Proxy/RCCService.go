@@ -352,13 +352,22 @@ func (p *pool) pickInstance(kind string) (instance *rccInstance, ok bool) {
 
 	defer p.mu.Unlock()
 
+	fewest := p.maxJobs
+
 	for _, ins := range p.instances {
-		if !ins.alive || ins.kind != kind {
+		if ins.kind != kind {
 			continue
 		}
 
-		if n := ins.countJobs(); n < p.maxJobs && (instance == nil || n < instance.countJobs()) {
-			instance = ins
+		ins.mu.Lock()
+
+		alive := ins.alive
+		n := len(ins.jobs)
+
+		ins.mu.Unlock()
+
+		if alive && n < fewest {
+			instance, fewest = ins, n
 		}
 	}
 
