@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	c "github.com/TwiN/go-color" // the log colours are kinda random loll whatever
@@ -37,7 +38,7 @@ type (
 	Session struct {
 		client *net.UDPAddr
 		gs *net.UDPConn
-		last time.Time
+		last atomic.Int64 // unix nanoseconds, written by both directions of the relay
 	}
 
 	Status uint8
@@ -757,7 +758,7 @@ func proxyToClient(p *Proxy, sessKey string, sess *Session) {
 			return
 		}
 
-		sess.last = time.Now()
+		sess.last.Store(time.Now().UnixNano())
 	}
 }
 
@@ -794,21 +795,35 @@ func runProxyOnPort(p *Proxy) {
 		mu.Unlock()
 	}
 
-	// Periodic cleanup for idle sessions
+	// Periodic cleanup for idle sessions, until the listener closes
+	done := make(chan struct{})
 	ticker := time.NewTicker(10 * time.Second)
 
+	defer close(done)
 	defer ticker.Stop()
 	go func() {
-		for range ticker.C {
-			now := time.Now()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+			}
+
+			cutoff := time.Now().Add(-idleTimeout).UnixNano()
+
+			mu.Lock()
 
 			for k, s := range sessions {
-				if now.Sub(s.last) > idleTimeout {
-					Log(c.InYellow(fmt.Sprintf("[proxy:%d] timing out session %s", p.Port, k)))
-					s.gs.Close()
-					deleteFromSessions(k)
+				if s.last.Load() >= cutoff {
+					continue
 				}
+
+				Log(c.InYellow(fmt.Sprintf("[proxy:%d] timing out session %s", p.Port, k)))
+				s.gs.Close()
+				delete(sessions, k)
 			}
+
+			mu.Unlock()
 		}
 	}()
 
@@ -827,7 +842,12 @@ func runProxyOnPort(p *Proxy) {
 		}
 
 		key := clientAddr.String()
+
+		mu.Lock()
+
 		s, exists := sessions[key]
+
+		mu.Unlock()
 
 		if !exists {
 			gsAddr := &net.UDPAddr{
@@ -847,9 +867,9 @@ func runProxyOnPort(p *Proxy) {
 					Port: clientAddr.Port,
 				},
 				gs: gsConn,
-				last: time.Now(),
 			}
 
+			s.last.Store(time.Now().UnixNano())
 			mu.Lock()
 
 			sessions[key] = s
@@ -858,7 +878,6 @@ func runProxyOnPort(p *Proxy) {
 			Log(c.InBlue(fmt.Sprintf("[proxy:%d] new client session %s -> 127.0.0.1:%d", p.Port, key, gsPort)))
 
 			// start goroutine to read gameserver responses and forward to client
-			// go readWrite(key, s)
 			go func() {
 				proxyToClient(p, key, s)
 				s.gs.Close()
@@ -875,15 +894,19 @@ func runProxyOnPort(p *Proxy) {
 			continue
 		}
 
-		s.last = time.Now()
+		s.last.Store(time.Now().UnixNano())
 	}
 
 	// cleanup any remaining sessions (e.g. when listener is closed)
+	mu.Lock()
+
 	for k, s := range sessions {
 		Log(c.InYellow(fmt.Sprintf("[proxy:%d] closing session %s", p.Port, k)))
 		s.gs.Close()
-		deleteFromSessions(k)
+		delete(sessions, k)
 	}
+
+	mu.Unlock()
 }
 
 func (p *Proxy) Start() error {
