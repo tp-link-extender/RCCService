@@ -577,14 +577,23 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
+// siteURL is where the Site's rbxclient routes are, overridable with SITE_URL
+func siteURL() string {
+	if u := os.Getenv("SITE_URL"); u != "" {
+		return strings.TrimSuffix(u, "/")
+	}
+
+	return fmt.Sprintf("http://www.%s", os.Getenv("DOMAIN"))
+}
+
+// fetchServeScript gets a place's serve loadscript, which the Site only gives out with the gameserver key
 func fetchServeScript(id int) ([]byte, error) {
 	key := os.Getenv("GAMESERVER_KEY")
 	if key == "" {
 		return nil, errors.New("GAMESERVER_KEY is not set")
 	}
 
-	domain := os.Getenv("DOMAIN")
-	url := fmt.Sprintf("http://www.%s/game/%d/serve", domain, id)
+	url := fmt.Sprintf("%s/game/%d/serve", siteURL(), id)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -673,28 +682,9 @@ func TrackRCCJob(server *Gameserver, id int) {
 // from the Site's serve loadscript, since it already has the right domain, map and
 // authentication info embedded
 func composeHostScript(id int) (string, error) {
-	siteURL := os.Getenv("SITE_URL")
-	if siteURL == "" {
-		siteURL = fmt.Sprintf("http://www.%s", os.Getenv("DOMAIN"))
-	}
-
-	serveURL := fmt.Sprintf("%s/game/%d/serve", siteURL, id)
-
-	res, err := http.Get(serveURL)
+	serveScript, err := fetchServeScript(id)
 	if err != nil {
-		return "", fmt.Errorf("fetch serve loadscript: %w", err)
-	}
-
-	serveScript, err := io.ReadAll(res.Body)
-
-	res.Body.Close()
-
-	if err != nil {
-		return "", fmt.Errorf("read serve loadscript: %w", err)
-	}
-
-	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("fetch serve loadscript: unexpected status %s", res.Status)
+		return "", err
 	}
 
 	s := string(serveScript)
