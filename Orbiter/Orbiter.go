@@ -224,9 +224,7 @@ var (
 func CheckServerUp(port int) bool {
 	// start a UDP server on the same port and see if it errors
 	// gee, I sure hope this never interferes with the actual server starting
-	laddr, err := net.ResolveUDPAddr(proto, fmt.Sprintf(":%d", port))
-
-	conn, err := net.ListenUDP(proto, laddr) // gs-client communication only works on ipv4...
+	conn, err := net.ListenUDP(proto, &net.UDPAddr{Port: port}) // gs-client communication only works on ipv4...
 	if err != nil {
 		return true
 	}
@@ -560,9 +558,10 @@ func (gs *Gameservers) statusPushRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	readBody, err := io.ReadAll(r.Body)
+	// statuses are a word and maybe a user ID, so anything bigger is junk
+	readBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4096))
 	if err != nil {
-		http.Error(w, "Failed to read request body: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to read request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
