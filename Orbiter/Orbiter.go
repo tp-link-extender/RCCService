@@ -1017,6 +1017,14 @@ func InstallSetup(version string) error {
 		return fmt.Errorf("create version directory: %w", err)
 	}
 
+	// every path goes through the root, so entries like ../x can't write outside the version directory
+	root, err := os.OpenRoot(versionDir)
+	if err != nil {
+		return fmt.Errorf("open version directory: %w", err)
+	}
+
+	defer root.Close()
+
 	// untar time
 	for tr := tar.NewReader(gz); ; {
 		header, err := tr.Next()
@@ -1028,9 +1036,13 @@ func InstallSetup(version string) error {
 			return fmt.Errorf("read tar header: %w", err)
 		}
 
-		switch target := filepath.Join(versionDir, header.Name); header.Typeflag {
+		switch name := filepath.FromSlash(header.Name); header.Typeflag {
 		case tar.TypeReg:
-			f, err := os.Create(target)
+			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+				return fmt.Errorf("create directory: %w", err)
+			}
+
+			f, err := root.Create(name)
 			if err != nil {
 				return fmt.Errorf("create file: %w", err)
 			}
@@ -1040,9 +1052,11 @@ func InstallSetup(version string) error {
 				return fmt.Errorf("write file: %w", err)
 			}
 
-			f.Close()
+			if err := f.Close(); err != nil {
+				return fmt.Errorf("write file: %w", err)
+			}
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := root.MkdirAll(name, 0o755); err != nil {
 				return fmt.Errorf("create directory: %w", err)
 			}
 		default:
