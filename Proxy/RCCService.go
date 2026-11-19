@@ -91,6 +91,9 @@ var (
 	proxyListenerPort = 64990
 	jobPool *pool
 
+	// escapes text going into the SOAP templates, so a < or & in a script or ID can't break (or add to) the envelope
+	xmlText = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 	// PREpended by the proxy to every host script sent to RCC. IMPORTANT: OpenJobEx script
 	// environments on this RCC build don't pump a scheduler - wait() and delay() never
 	// resume - so all reporting here is synchronous at script start, or fires off of
@@ -263,7 +266,7 @@ func (p *pool) renewLoop(j *job) {
 				return
 			}
 
-			body := strings.ReplaceAll(renewTemplate, "_TASK_ID", j.id)
+			body := strings.ReplaceAll(renewTemplate, "_TASK_ID", xmlText.Replace(j.id))
 			body = strings.ReplaceAll(body, "_RENEW_SECONDS", strconv.Itoa(p.renewSeconds))
 
 			req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", j.instance.port), strings.NewReader(body))
@@ -385,7 +388,7 @@ func (p *pool) CloseJob(id string) {
 			// this RCC build only implements CloseJob (CloseJobEx doesn't exist on it)
 			const method string = "CloseJob"
 
-			body := strings.ReplaceAll(strings.ReplaceAll(closeTemplate, "_TASK_ID", id), "CloseJobEx", method)
+			body := strings.ReplaceAll(strings.ReplaceAll(closeTemplate, "_TASK_ID", xmlText.Replace(id)), "CloseJobEx", method)
 
 			if req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d", instance.port), strings.NewReader(body)); err != nil {
 				Log(c.InRed(fmt.Sprintf("Failed to create close request for job %s: %s", id, err.Error())))
@@ -962,9 +965,9 @@ func hostRoute(w http.ResponseWriter, r *http.Request) {
 
 	Log(c.InBlue(fmt.Sprintf("[host] %s - host script received (%d chars), first line: %q", id, len(script), firstLine)))
 
-	currentTemplate := strings.ReplaceAll(hostTemplate, "_TASK_ID", id)
+	currentTemplate := strings.ReplaceAll(hostTemplate, "_TASK_ID", xmlText.Replace(id))
 	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", jobPool.expiration) // not the raw env, which uses 0 for "never"
-	currentTemplate = strings.ReplaceAll(currentTemplate, "_HOST_SCRIPT", script+"  ")
+	currentTemplate = strings.ReplaceAll(currentTemplate, "_HOST_SCRIPT", xmlText.Replace(script)+"  ")
 
 	if err := jobPool.Submit(id, "host", currentTemplate); err != nil {
 		Log(c.InRed("Failed to start host job: " + err.Error()))
@@ -995,9 +998,9 @@ func idRoute(w http.ResponseWriter, r *http.Request) {
 
 	script := strings.ReplaceAll(string(loadScript), "_PING_URL", "http://127.0.0.1:64990/ping")
 	id := r.PathValue("id")
-	currentTemplate := strings.ReplaceAll(renderTemplate, "_TASK_ID", id)
+	currentTemplate := strings.ReplaceAll(renderTemplate, "_TASK_ID", xmlText.Replace(id))
 	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", "30")
-	currentTemplate = strings.ReplaceAll(currentTemplate, "_RENDER_SCRIPT", script)
+	currentTemplate = strings.ReplaceAll(currentTemplate, "_RENDER_SCRIPT", xmlText.Replace(script))
 
 	Log(c.InBlue("Sending request to render " + id))
 
