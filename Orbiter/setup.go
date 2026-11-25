@@ -83,7 +83,6 @@ func InstallSetup(domain, version string) error {
 
 			if _, err := io.Copy(f, tr); err != nil {
 				f.Close()
-
 				return fmt.Errorf("write file: %w", err)
 			}
 
@@ -126,7 +125,6 @@ func LoadFromSetup(domain string) (string, error) {
 
 	if _, err := os.Stat(versionPathStart + ver); errors.Is(err, os.ErrNotExist) {
 		Log(c.InPurple(fmt.Sprintf("Version %s not found, downloading from %s...", ver, domain)))
-
 		return ver, InstallSetup(domain, ver)
 	}
 

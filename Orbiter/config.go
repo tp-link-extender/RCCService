@@ -5,9 +5,24 @@ import (
 	"fmt"
 	"net/url"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 )
+
+// config is the Orbiter's whole environment, read and checked once at startup
+type config struct {
+	Key, // ORBITER_KEY: the bearer for every Site-facing call, in both directions
+	Domain, // DOMAIN: the public domain, gs.{Domain} serves the status streams in production
+	SiteURL, // SITE_URL: the Site's address for the serve, place and render callbacks
+	SetupDomain string // SETUPDOMAIN: where the 2013 client files are downloaded from
+	Dev bool // ENV=dev: the status streams on :64992 over plain HTTP
+	MaxJobsPerRCC, RCCBasePort, HostExpiration int // seconds; 0 = jobs last practically forever and are closed explicitly
+	DefaultEngine, // engine for a start without ?engine=
+	MapLocation string // RCC_MAP_LOCATION, used verbatim when MapOverride is set ("none" skips the map)
+	MapOverride bool
+	RCCSpawn string // modeDirect or modeDetached
+}
 
 const (
 	engineStudio = "studio" // 2013 Studio hosted gameservers
@@ -22,27 +37,17 @@ const (
 // placeholderKeys are the example values from the env files. A key equal to one is refused
 var placeholderKeys = []string{"password", "change-me-to-a-long-random-key"}
 
-// config is the Orbiter's whole environment, read and checked once at startup
-type config struct {
-	Key string // ORBITER_KEY: the bearer for every Site-facing call, in both directions
-	Domain string // DOMAIN: the public domain, gs.{Domain} serves the status streams in production
-	SiteURL string // SITE_URL: the Site's address for the serve, place and render callbacks
-	SetupDomain string // SETUPDOMAIN: where the 2013 client files are downloaded from
-	Dev bool // ENV=dev: the status streams on :64992 over plain HTTP
-	MaxJobsPerRCC int
-	RCCBasePort int
-	HostExpiration int // seconds; 0 = jobs last practically forever and are closed explicitly
-	DefaultEngine string // engine for a start without ?engine=
-	MapLocation string // RCC_MAP_LOCATION, used verbatim when MapOverride is set ("none" skips the map)
-	MapOverride bool
-	RCCSpawn string // modeDirect or modeDetached
+// isPlaceholderKey reports whether key is one of the example values
+func isPlaceholderKey(key string) bool {
+	return slices.Contains(placeholderKeys, key)
 }
 
 // loadConfig reads and checks the environment. lookup is os.LookupEnv in production
 func loadConfig(lookup func(string) (string, bool)) (config, error) {
-	var cfg config
-
-	var err error
+	var (
+		cfg config
+		err error
+	)
 
 	get := func(name string) string {
 		v, _ := lookup(name)
@@ -63,6 +68,7 @@ func loadConfig(lookup func(string) (string, bool)) (config, error) {
 	// intVar returns a required integer of at least minimum
 	intVar := func(name string, minimum int) int {
 		v := str(name)
+
 		if err != nil {
 			return 0
 		}
@@ -76,7 +82,6 @@ func loadConfig(lookup func(string) (string, bool)) (config, error) {
 
 		return n
 	}
-
 	cfg.Key = get("ORBITER_KEY")
 
 	switch {
@@ -88,13 +93,11 @@ func loadConfig(lookup func(string) (string, bool)) (config, error) {
 
 	cfg.Domain = str("DOMAIN")
 	cfg.SetupDomain = str("SETUPDOMAIN")
-
 	cfg.SiteURL = str("SITE_URL")
-	if err == nil {
-		u, parseErr := url.Parse(cfg.SiteURL)
 
-		switch {
-		case parseErr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
+	if err == nil {
+		switch u, parseErr := url.Parse(cfg.SiteURL); {
+		case parseErr != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "":
 			err = errors.New("SITE_URL must be an absolute http or https URL")
 		case strings.HasSuffix(cfg.SiteURL, "/"):
 			err = errors.New("SITE_URL must not end with a slash")
@@ -114,8 +117,8 @@ func loadConfig(lookup func(string) (string, bool)) (config, error) {
 	cfg.MaxJobsPerRCC = intVar("MAX_JOBS_PER_RCC", 1)
 	cfg.RCCBasePort = intVar("RCC_BASE_PORT", 1)
 	cfg.HostExpiration = intVar("HOST_EXPIRATION", 0)
-
 	cfg.DefaultEngine = get("DEFAULT_ENGINE")
+
 	if cfg.DefaultEngine == "" {
 		cfg.DefaultEngine = engineRCC
 	}
@@ -125,13 +128,15 @@ func loadConfig(lookup func(string) (string, bool)) (config, error) {
 	}
 
 	cfg.RCCSpawn = get("RCC_SPAWN")
+
 	switch cfg.RCCSpawn {
 	case "":
 		cfg.RCCSpawn = modeDirect
+
 		if runtime.GOOS == "windows" {
 			cfg.RCCSpawn = modeDetached
 		}
-	case modeDirect, modeDetached:
+	case modeDetached, modeDirect:
 	default:
 		return cfg, errors.New("RCC_SPAWN must be direct or detached")
 	}
@@ -143,15 +148,4 @@ func loadConfig(lookup func(string) (string, bool)) (config, error) {
 	}
 
 	return cfg, nil
-}
-
-// isPlaceholderKey reports whether key is one of the example values
-func isPlaceholderKey(key string) bool {
-	for _, p := range placeholderKeys {
-		if key == p {
-			return true
-		}
-	}
-
-	return false
 }

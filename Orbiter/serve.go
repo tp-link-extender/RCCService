@@ -31,62 +31,37 @@ func hostpingURL(id int) string {
 	return fmt.Sprintf("http://127.0.0.1:%d/hostping/%d", loopbackPort, id)
 }
 
-// registerServeScript stores a serve script under a fresh token and returns the token
-func (o *orbiter) registerServeScript(id int, body []byte) (string, error) {
-	b := make([]byte, 16)
+// hostScriptFor fills the host script's placeholders from the config and a serve loadscript
+func hostScriptFor(cfg config, serve string, id int) string {
+	baseURL := cfg.Domain
 
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate serve token: %w", err)
+	if m := reBaseURL.FindStringSubmatch(serve); m != nil {
+		baseURL = m[1]
 	}
 
-	token := hex.EncodeToString(b)
+	// RCC's own hosting script loads places via the asset route, not the rbxclient /game/{id}
+	// route that Studio-based hosting uses
+	mapLocation := fmt.Sprintf("http://%s/asset/?id=%d", baseURL, id)
 
-	o.serveMu.Lock()
-
-	o.serves[id] = serveScript{token: token, body: body}
-
-	o.serveMu.Unlock()
-
-	return token, nil
-}
-
-// removeServeScript forgets a place's serve script, only if it's still the one with token
-func (o *orbiter) removeServeScript(id int, token string) {
-	if token == "" {
-		return
+	switch {
+	case cfg.MapOverride && cfg.MapLocation == "none": // "none" skips map loading (tests)
+		mapLocation = ""
+	case cfg.MapOverride:
+		mapLocation = cfg.MapLocation
 	}
 
-	o.serveMu.Lock()
+	// matches the serverpresence URL directly instead of assuming how the loadscript spells
+	// out its Visit:SetPing call
+	var presenceLine string
 
-	defer o.serveMu.Unlock()
-
-	if cur, ok := o.serves[id]; ok && cur.token == token {
-		delete(o.serves, id)
-	}
-}
-
-// serveRoute serves a Studio process its serve script, to a request that carries the token
-func (o *orbiter) serveRoute(w http.ResponseWriter, r *http.Request) {
-	id, ok := gameserverID(w, r)
-	if !ok {
-		return
+	if presenceURL := rePresenceURL.FindString(serve); presenceURL != "" {
+		presenceLine = fmt.Sprintf("pcall(function() Visit:SetPing(%q, 30) end)", presenceURL)
 	}
 
-	o.serveMu.RLock()
+	// a single-pass replacer, so a substituted value is never rescanned for placeholders
+	replacer := strings.NewReplacer("_BASE_URL", baseURL, "_PLACE_ID", strconv.Itoa(id), "_MAP_LOCATION", strconv.Quote(mapLocation), "_SERVER_PORT", strconv.Itoa(idToPort(id)), "_PRESENCE_PING", presenceLine, "_HOSTPING_URL", hostpingURL(id))
 
-	s, found := o.serves[id]
-
-	o.serveMu.RUnlock()
-
-	if !found || subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("t")), []byte(s.token)) != 1 {
-		writeError(w, http.StatusNotFound, "not found")
-
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Write(s.body)
+	return replacer.Replace(rccHostScript)
 }
 
 // fetchServeScript gets a place's serve loadscript from the Site, which only gives it out with the key
@@ -134,41 +109,62 @@ func (o *orbiter) composeHostScript(id int) (string, error) {
 	return script, nil
 }
 
-// hostScriptFor fills the host script's placeholders from the config and a serve loadscript
-func hostScriptFor(cfg config, serve string, id int) string {
-	baseURL := cfg.Domain
-	if m := reBaseURL.FindStringSubmatch(serve); m != nil {
-		baseURL = m[1]
+// registerServeScript stores a serve script under a fresh token and returns the token
+func (o *orbiter) registerServeScript(id int, body []byte) (string, error) {
+	b := make([]byte, 16)
+
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate serve token: %w", err)
 	}
 
-	// RCC's own hosting script loads places via the asset route, not the rbxclient /game/{id}
-	// route that Studio-based hosting uses
-	mapLocation := fmt.Sprintf("http://%s/asset/?id=%d", baseURL, id)
+	token := hex.EncodeToString(b)
 
-	switch {
-	case cfg.MapOverride && cfg.MapLocation == "none": // "none" skips map loading (tests)
-		mapLocation = ""
-	case cfg.MapOverride:
-		mapLocation = cfg.MapLocation
+	o.serveMu.Lock()
+
+	o.serves[id] = serveScript{
+		token: token,
+		body: body,
 	}
 
-	// matches the serverpresence URL directly instead of assuming how the loadscript spells
-	// out its Visit:SetPing call
-	var presenceLine string
+	o.serveMu.Unlock()
 
-	if presenceURL := rePresenceURL.FindString(serve); presenceURL != "" {
-		presenceLine = fmt.Sprintf("pcall(function() Visit:SetPing(%q, 30) end)", presenceURL)
+	return token, nil
+}
+
+// removeServeScript forgets a place's serve script, only if it's still the one with token
+func (o *orbiter) removeServeScript(id int, token string) {
+	if token == "" {
+		return
 	}
 
-	// a single-pass replacer, so a substituted value is never rescanned for placeholders
-	replacer := strings.NewReplacer(
-		"_BASE_URL", baseURL,
-		"_PLACE_ID", strconv.Itoa(id),
-		"_MAP_LOCATION", strconv.Quote(mapLocation),
-		"_SERVER_PORT", strconv.Itoa(idToPort(id)),
-		"_PRESENCE_PING", presenceLine,
-		"_HOSTPING_URL", hostpingURL(id),
-	)
+	o.serveMu.Lock()
 
-	return replacer.Replace(rccHostScript)
+	defer o.serveMu.Unlock()
+
+	if cur, ok := o.serves[id]; ok && cur.token == token {
+		delete(o.serves, id)
+	}
+}
+
+// serveRoute serves a Studio process its serve script, to a request that carries the token
+func (o *orbiter) serveRoute(w http.ResponseWriter, r *http.Request) {
+	id, ok := gameserverID(w, r)
+	if !ok {
+		return
+	}
+
+	o.serveMu.RLock()
+
+	s, found := o.serves[id]
+
+	o.serveMu.RUnlock()
+
+	if !found || subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("t")), []byte(s.token)) != 1 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Write(s.body)
 }

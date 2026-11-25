@@ -1,12 +1,13 @@
 package main
 
-// Lua that runs inside the RCC and Studio processes. The placeholders are filled in by the Orbiter
+const (
+	// Lua that runs inside the RCC and Studio processes. The placeholders are filled in by the Orbiter
 
-// hostEpilogue is prepended to every host script sent to RCC. IMPORTANT: OpenJobEx script
-// environments on this RCC build don't pump a scheduler - wait() and delay() never
-// resume - so all reporting here is synchronous at script start, or fires off of engine
-// events once RunService:Run() pumps the heartbeat in the rest of the script
-const hostEpilogue = `print "[Orbiter][RCC]: Reporting to the Orbiter..."
+	// hostEpilogue is prepended to every host script sent to RCC. IMPORTANT: OpenJobEx script
+	// environments on this RCC build don't pump a scheduler - wait() and delay() never
+	// resume - so all reporting here is synchronous at script start, or fires off of engine
+	// events once RunService:Run() pumps the heartbeat in the rest of the script
+	hostEpilogue = `print "[Orbiter][RCC]: Reporting to the Orbiter..."
 local Players = game:GetService "Players"
 
 pcall(function()
@@ -27,11 +28,11 @@ Players.PlayerRemoving:connect(function(player)
 	end)
 end)`
 
-// rccHostScript is the RCC-safe host script. IMPORTANT: OpenJobEx script environments don't pump a
-// scheduler on this RCC build - wait() and delay() never resume - so this is entirely inline
-// (see gameserver.txt) and ends with RunService:Run(), which takes over the script forever while
-// pumping everything else (including the reporting code the epilogue prepends)
-const rccHostScript = `print "[Orbiter][RCC]: Starting hosted gameserver..."
+	// rccHostScript is the RCC-safe host script. IMPORTANT: OpenJobEx script environments don't pump a
+	// scheduler on this RCC build - wait() and delay() never resume - so this is entirely inline
+	// (see gameserver.txt) and ends with RunService:Run(), which takes over the script forever while
+	// pumping everything else (including the reporting code the epilogue prepends)
+	rccHostScript = `print "[Orbiter][RCC]: Starting hosted gameserver..."
 
 local ScriptContext = game:GetService("ScriptContext")
 local NetworkServer = game:GetService("NetworkServer")
@@ -122,3 +123,4 @@ ScriptContext:SetTimeout(10)
 ScriptContext.ScriptsDisabled = false
 
 game:GetService("RunService"):Run()`
+)

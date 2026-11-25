@@ -112,9 +112,8 @@ func encodeRenderUpdate(status string, body, head []byte) []byte {
 // buildRenderUpdate turns RCC's render callback into the Site's update body
 func buildRenderUpdate(raw []byte) ([]byte, error) {
 	data := strings.Split(string(raw), "\n")
-	status := data[0]
 
-	switch status {
+	switch status := data[0]; status {
 	case "Rendering":
 		return encodeRenderUpdate(status, nil, nil), nil
 	case "Completed":
@@ -134,17 +133,80 @@ func buildRenderUpdate(raw []byte) ([]byte, error) {
 		}
 
 		return encodeRenderUpdate(status, body, head), nil
-	default:
-		return nil, fmt.Errorf("%w: unknown render status %q", errBadCallback, status)
 	}
+
+	return nil, fmt.Errorf("%w: unknown render status %q", errBadCallback, status)
+}
+
+// postRenderUpdate reports a render's progress to the Site's render update route
+func (o *orbiter) postRenderUpdate(id string, payload []byte) error {
+	req, err := http.NewRequest(http.MethodPost, o.cfg.SiteURL+"/api/render/update/"+id, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Authorization", "Bearer "+o.cfg.Key)
+
+	res, err := o.site.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+
+	io.Copy(io.Discard, res.Body)
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("the Site responded %s", res.Status)
+	}
+
+	return nil
+}
+
+// renderStartRoute starts a render from the Site. The body is the render loadscript, already
+// carrying its PING_URL (the loopback callback)
+func (o *orbiter) renderStartRoute(w http.ResponseWriter, r *http.Request) {
+	id, ok := renderID(w, r)
+	if !ok {
+		return
+	}
+
+	Log(c.InBlue("Received render request for " + id))
+
+	script, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxScriptBytes))
+	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			writeError(w, http.StatusRequestEntityTooLarge, "render script is larger than 8 MiB")
+			return
+		}
+
+		writeError(w, http.StatusBadRequest, "failed to read render script: "+err.Error())
+
+		return
+	}
+
+	// placeholders are filled in before the script, so a script containing one of them can't
+	// be rewritten by a later substitution
+	currentTemplate := strings.ReplaceAll(renderTemplate, "_TASK_ID", xmlText.Replace(id))
+	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", "30")
+	currentTemplate = strings.ReplaceAll(currentTemplate, "_RENDER_SCRIPT", xmlText.Replace(string(script)))
+
+	if err := o.pool.Submit(id, "render", currentTemplate); err != nil {
+		Log(c.InRed("Failed to start render " + id + ": " + err.Error()))
+		writeError(w, http.StatusInternalServerError, "failed to start render: "+err.Error())
+
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // readPingBody reads a callback body, gunzipping it when it's gzipped
 func readPingBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	readBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxPingBytes))
 	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return nil, errTooLarge
 		}
 
@@ -174,46 +236,6 @@ func readPingBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	return readBody, nil
 }
 
-// renderStartRoute starts a render from the Site. The body is the render loadscript, already
-// carrying its PING_URL (the loopback callback)
-func (o *orbiter) renderStartRoute(w http.ResponseWriter, r *http.Request) {
-	id, ok := renderID(w, r)
-	if !ok {
-		return
-	}
-
-	Log(c.InBlue("Received render request for " + id))
-
-	script, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxScriptBytes))
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			writeError(w, http.StatusRequestEntityTooLarge, "render script is larger than 8 MiB")
-
-			return
-		}
-
-		writeError(w, http.StatusBadRequest, "failed to read render script: "+err.Error())
-
-		return
-	}
-
-	// placeholders are filled in before the script, so a script containing one of them can't
-	// be rewritten by a later substitution
-	currentTemplate := strings.ReplaceAll(renderTemplate, "_TASK_ID", xmlText.Replace(id))
-	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", "30")
-	currentTemplate = strings.ReplaceAll(currentTemplate, "_RENDER_SCRIPT", xmlText.Replace(string(script)))
-
-	if err := o.pool.Submit(id, "render", currentTemplate); err != nil {
-		Log(c.InRed("Failed to start render " + id + ": " + err.Error()))
-		writeError(w, http.StatusInternalServerError, "failed to start render: "+err.Error())
-
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
 // renderPingRoute takes RCC's render callback on the loopback listener and passes it to the Site
 func (o *orbiter) renderPingRoute(w http.ResponseWriter, r *http.Request) {
 	id, ok := renderID(w, r)
@@ -224,13 +246,11 @@ func (o *orbiter) renderPingRoute(w http.ResponseWriter, r *http.Request) {
 	raw, err := readPingBody(w, r)
 	if errors.Is(err, errTooLarge) {
 		writeError(w, http.StatusRequestEntityTooLarge, err.Error())
-
 		return
 	}
 
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-
 		return
 	}
 
@@ -260,30 +280,4 @@ func (o *orbiter) renderPingRoute(w http.ResponseWriter, r *http.Request) {
 
 	Log(c.InGreen("Render " + id + " reported to the Site"))
 	w.WriteHeader(http.StatusOK)
-}
-
-// postRenderUpdate reports a render's progress to the Site's render update route
-func (o *orbiter) postRenderUpdate(id string, payload []byte) error {
-	req, err := http.NewRequest(http.MethodPost, o.cfg.SiteURL+"/api/render/update/"+id, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Authorization", "Bearer "+o.cfg.Key)
-
-	res, err := o.site.Do(req)
-	if err != nil {
-		return err
-	}
-
-	defer res.Body.Close()
-
-	io.Copy(io.Discard, res.Body)
-
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("the Site responded %s", res.Status)
-	}
-
-	return nil
 }
