@@ -54,7 +54,9 @@ func startRelay(id int) (*udpRelay, error) {
 // close shuts the relay down. Closing its socket ends the loop and every session under it
 func (r *udpRelay) close() {
 	r.stop.Do(func() {
-		r.conn.Close()
+		if r.conn != nil {
+			r.conn.Close()
+		}
 
 		Log(c.InYellow(fmt.Sprintf("[relay:%d] stopped", r.port)))
 	})
