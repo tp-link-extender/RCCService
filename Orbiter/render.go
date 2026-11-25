@@ -111,8 +111,9 @@ func encodeRenderUpdate(status string, body, head []byte) []byte {
 // buildRenderUpdate turns RCC's render callback into the Site's update body
 func buildRenderUpdate(raw []byte) ([]byte, error) {
 	data := strings.Split(string(raw), "\n")
+	status := data[0]
 
-	switch status := data[0]; status {
+	switch status {
 	case "Rendering":
 		return encodeRenderUpdate(status, nil, nil), nil
 	case "Completed":
