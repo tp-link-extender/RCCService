@@ -81,8 +81,7 @@ func (r *udpRelay) relayToClient(key string, s *udpSession) {
 			return
 		}
 
-		// the relay's own socket is the one that talks to the client, so it's still open here
-		// unless the whole relay has closed
+		// the relay's own socket is the one that talks to the client, so it's still open here unless the whole relay has closed
 		if _, err := r.conn.WriteToUDP(b[:n], s.client); err != nil {
 			Log(c.InRed(fmt.Sprintf("[relay:%d] failed to forward to client %s: %v", r.port, s.client.String(), err)))
 			return

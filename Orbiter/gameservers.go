@@ -55,8 +55,7 @@ const (
 	studioStartTimeout = 30 * time.Second
 	rccReadyTimeout = 120 * time.Second
 
-	// a hosted RCC server is only stopped once the engine has been silent this long. Its
-	// heartbeat arrives about every 30 seconds
+	// a hosted RCC server is only stopped once the engine has been silent this long. Its heartbeat arrives about every 30 seconds
 	rccGracePeriod = 90 * time.Second
 )
 
@@ -135,8 +134,7 @@ func (s *gameserver) status() Status {
 	return s.state
 }
 
-// stop closes the server: its state moves to Closed, then the process or job, and the relay
-// are shut down. Calling it again does nothing
+// stop closes the server: its state moves to Closed, then the process or job, and the relay are shut down. Calling it again does nothing
 func (s *gameserver) stop() {
 	if !s.setStatus(Closed) {
 		return
@@ -449,9 +447,7 @@ func (o *orbiter) reserveStart(id int) bool {
 	return true
 }
 
-// trackRCCJob monitors a hosted RCC gameserver purely on engine pushes: "Ready" (which promotes
-// the server to Running) and periodic "Heartbeat" pings. The port probe isn't used, since RCC's
-// RakNet bindings aren't reliably checkable with test-bind sockets
+// trackRCCJob monitors a hosted RCC gameserver purely on engine pushes: "Ready" (which promotes the server to Running) and periodic "Heartbeat" pings. The port probe isn't used, since RCC's RakNet bindings aren't reliably checkable with test-bind sockets
 func (o *orbiter) trackRCCJob(s *gameserver, id int) {
 	port := idToPort(id)
 
@@ -645,8 +641,7 @@ func (o *orbiter) waitForServer(id int, timeout time.Duration) *gameserver {
 	}
 }
 
-// hostPingRoute takes a hosted gameserver's status on the loopback listener. Its body is the
-// status line, then an optional user id
+// hostPingRoute takes a hosted gameserver's status on the loopback listener. Its body is the status line, then an optional user id
 func (o *orbiter) hostPingRoute(w http.ResponseWriter, r *http.Request) {
 	id, ok := gameserverID(w, r)
 	if !ok {

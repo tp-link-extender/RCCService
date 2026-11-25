@@ -91,8 +91,7 @@ func compressRenderImages(bodyB64 string, headB64 *string) (body, head []byte, e
 	return bodyBuf.Bytes(), headBuf.Bytes(), nil
 }
 
-// encodeRenderUpdate builds the body the Site expects: the status line, then for Completed
-// the big-endian body and head lengths followed by the images
+// encodeRenderUpdate builds the body the Site expects: the status line, then for Completed the big-endian body and head lengths followed by the images
 func encodeRenderUpdate(status string, body, head []byte) []byte {
 	var buf bytes.Buffer
 
@@ -164,8 +163,7 @@ func (o *orbiter) postRenderUpdate(id string, payload []byte) error {
 	return nil
 }
 
-// renderStartRoute starts a render from the Site. The body is the render loadscript, already
-// carrying its PING_URL (the loopback callback)
+// renderStartRoute starts a render from the Site. The body is the render loadscript, already carrying its PING_URL (the loopback callback)
 func (o *orbiter) renderStartRoute(w http.ResponseWriter, r *http.Request) {
 	id, ok := renderID(w, r)
 	if !ok {
@@ -186,8 +184,7 @@ func (o *orbiter) renderStartRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// placeholders are filled in before the script, so a script containing one of them can't
-	// be rewritten by a later substitution
+	// placeholders are filled in before the script, so a script containing one of them can't be rewritten by a later substitution
 	currentTemplate := strings.ReplaceAll(renderTemplate, "_TASK_ID", xmlText.Replace(id))
 	currentTemplate = strings.ReplaceAll(currentTemplate, "_EXPIRATION", "30")
 	currentTemplate = strings.ReplaceAll(currentTemplate, "_RENDER_SCRIPT", xmlText.Replace(string(script)))

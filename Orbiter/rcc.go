@@ -291,8 +291,7 @@ func (p *pool) renewLoop(j *job) {
 				continue
 			}
 
-			// a fault here likely means the renew template doesn't fit this RCC build;
-			// log it instead of sending more renewals for nothing
+			// a fault here likely means the renew template doesn't fit this RCC build; log it instead of sending more renewals for nothing
 			if strings.Contains(string(response), "SOAP-ENV:Fault") {
 				Log(c.InRed(fmt.Sprintf("RCCService rejected lease renewal of job %s: %s; stopping renewals", j.id, string(response))))
 				return
@@ -343,8 +342,7 @@ func (i *rccInstance) kill() {
 	Log(c.InYellow(fmt.Sprintf("RCCService instance on port %d shut down", i.port)))
 }
 
-// idleShutdown closes an instance if it's a host instance with no active jobs left;
-// the always-on render instance is never shut down this way
+// idleShutdown closes an instance if it's a host instance with no active jobs left; the always-on render instance is never shut down this way
 func (p *pool) idleShutdown(instance *rccInstance) {
 	if instance == nil || instance.kind != "host" {
 		return
@@ -425,8 +423,7 @@ func (i *rccInstance) trackPid() {
 	}
 }
 
-// spawnAlive checks whether an instance's process still exists, going by the tracked pid when
-// available, or by its `-Console <port>` command line otherwise
+// spawnAlive checks whether an instance's process still exists, going by the tracked pid when available, or by its `-Console <port>` command line otherwise
 func spawnAlive(i *rccInstance) bool {
 	i.mu.Lock()
 
@@ -454,8 +451,7 @@ func spawnAlive(i *rccInstance) bool {
 	return strings.TrimSpace(string(out)) == "alive"
 }
 
-// spawnDetached launches an RCCService instance exactly like a manual start: a fully detached,
-// separate console process. Liveness is polled instead of waiting on process handles
+// spawnDetached launches an RCCService instance exactly like a manual start: a fully detached, separate console process. Liveness is polled instead of waiting on process handles
 func spawnDetached(i *rccInstance) error {
 	absExe, err := filepath.Abs(exePath)
 	if err != nil {
@@ -507,8 +503,7 @@ func (p *pool) run(i *rccInstance) {
 
 		alive := i.alive
 
-		// if the process stopped, all of its jobs died with it: free them up
-		// (renders can be re-requested by the Site, and hosts are culled by the gameserver trackers)
+		// if the process stopped, all of its jobs died with it: free them up (renders can be re-requested by the Site, and hosts are culled by the gameserver trackers)
 		lost := make([]*job, 0, len(i.jobs))
 
 		for id := range i.jobs {
@@ -527,8 +522,7 @@ func (p *pool) run(i *rccInstance) {
 			return
 		}
 
-		// only render instances restart themselves; a host instance that stopped is finished,
-		// so mark it dead and let the pool forget it
+		// only render instances restart themselves; a host instance that stopped is finished, so mark it dead and let the pool forget it
 		if i.kind != "render" {
 			i.mu.Lock()
 
@@ -590,8 +584,7 @@ func waitForRCC(port int) error {
 	return fmt.Errorf("RCC instance on port %d did not respond within %s", port, rccStartTimeout)
 }
 
-// Submit adds a job to the pool, sends the SOAP request to an instance (spawning a new instance
-// if they're all full), and starts lease renewal for host jobs
+// Submit adds a job to the pool, sends the SOAP request to an instance (spawning a new instance if they're all full), and starts lease renewal for host jobs
 func (p *pool) Submit(id, kind, soap string) error {
 	p.mu.Lock()
 	if _, exists := p.jobs[id]; exists {
@@ -686,8 +679,7 @@ func (p *pool) Submit(id, kind, soap string) error {
 		return fail(fmt.Errorf("read RCCService response: %w", err))
 	}
 
-	// RCC returns SOAP faults for malformed requests instead of proper HTTP errors;
-	// don't count these jobs as active
+	// RCC returns SOAP faults for malformed requests instead of proper HTTP errors; don't count these jobs as active
 	if strings.Contains(string(response), "SOAP-ENV:Fault") {
 		return fail(fmt.Errorf("RCCService returned a SOAP fault: %s", string(response)))
 	}

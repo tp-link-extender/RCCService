@@ -21,8 +21,7 @@ type orbiter struct {
 	pool *pool
 	site *http.Client
 
-	// gameservers, keyed by place id. gsMu guards the maps and the channel below, and
-	// is taken before any gameserver's own mutex, never after
+	// gameservers, keyed by place id. gsMu guards the maps and the channel below, and is taken before any gameserver's own mutex, never after
 	gsMu sync.Mutex
 	servers map[int]*gameserver
 	starting map[int]struct{} // ids with a start in progress

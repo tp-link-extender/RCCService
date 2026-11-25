@@ -3,10 +3,7 @@ package main
 const (
 	// Lua that runs inside the RCC and Studio processes. The placeholders are filled in by the Orbiter
 
-	// hostEpilogue is prepended to every host script sent to RCC. IMPORTANT: OpenJobEx script
-	// environments on this RCC build don't pump a scheduler - wait() and delay() never
-	// resume - so all reporting here is synchronous at script start, or fires off of engine
-	// events once RunService:Run() pumps the heartbeat in the rest of the script
+	// hostEpilogue is prepended to every host script sent to RCC. IMPORTANT: OpenJobEx script environments on this RCC build don't pump a scheduler - wait() and delay() never resume - so all reporting here is synchronous at script start, or fires off of engine events once RunService:Run() pumps the heartbeat in the rest of the script
 	hostEpilogue = `print "[Orbiter][RCC]: Reporting to the Orbiter..."
 local Players = game:GetService "Players"
 
@@ -28,10 +25,7 @@ Players.PlayerRemoving:connect(function(player)
 	end)
 end)`
 
-	// rccHostScript is the RCC-safe host script. IMPORTANT: OpenJobEx script environments don't pump a
-	// scheduler on this RCC build - wait() and delay() never resume - so this is entirely inline
-	// (see gameserver.txt) and ends with RunService:Run(), which takes over the script forever while
-	// pumping everything else (including the reporting code the epilogue prepends)
+	// rccHostScript is the RCC-safe host script. IMPORTANT: OpenJobEx script environments don't pump a scheduler on this RCC build - wait() and delay() never resume - so this is entirely inline (see gameserver.txt) and ends with RunService:Run(), which takes over the script forever while pumping everything else (including the reporting code the epilogue prepends)
 	rccHostScript = `print "[Orbiter][RCC]: Starting hosted gameserver..."
 
 local ScriptContext = game:GetService("ScriptContext")
@@ -83,8 +77,7 @@ NetworkServer:Start(_SERVER_PORT)
 print "[Orbiter][RCC]: network server started"
 _PRESENCE_PING
 
--- report to the Orbiter right away; anything below this line runs forever once
--- RunService:Run() takes over, and nothing past the end of the script ever executes
+-- report to the Orbiter right away; anything below this line runs forever once RunService:Run() takes over, and nothing past the end of the script ever executes
 pcall(function() game:HttpPost("_HOSTPING_URL", "Ready", true, "text/json") end)
 
 -- periodic engine liveness reports, once every ~600 heartbeats into an integer
@@ -96,9 +89,7 @@ RunService.Heartbeat:connect(function()
 	end
 end)
 
--- inactivity report (like Studio's host.lua: 5 minutes after the last player
--- leaves, including the initial grace period before anyone joins). game:Shutdown()
--- doesn't exist in RCC jobs, so the Orbiter closes the job on receiving this
+-- inactivity report (like Studio's host.lua: 5 minutes after the last player leaves, including the initial grace period before anyone joins). game:Shutdown() doesn't exist in RCC jobs, so the Orbiter closes the job on receiving this
 local lastActive = os.time()
 local hasReportedUnused = false
 local RCCPlayers = game:GetService("Players")

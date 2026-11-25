@@ -1,6 +1,4 @@
-// The Orbiter is the one service on the RCC machine. It runs gameservers (2013 Studio
-// processes and RCC jobs) and renders for the Site, and relays their traffic. Its wire contract
-// is docs/src/content/docs/design/orbiter-contract.md in the MercuryCore repository
+// The Orbiter is the one service on the RCC machine. It runs gameservers (2013 Studio processes and RCC jobs) and renders for the Site, and relays their traffic. Its wire contract is docs/src/content/docs/design/orbiter-contract.md in the MercuryCore repository
 package main
 
 import (
@@ -14,8 +12,7 @@ import (
 	. "github.com/tp-link-extender/RCCService/Shared"
 )
 
-// servePublic serves the browsers' status streams. In dev it's plain HTTP on :64992; in production
-// it's gs.{DOMAIN} on 443, with certificates from certmagic
+// servePublic serves the browsers' status streams. In dev it's plain HTTP on :64992; in production it's gs.{DOMAIN} on 443, with certificates from certmagic
 func servePublic(o *orbiter, cfg config) {
 	if cfg.Dev {
 		Log(c.InCyan("~ Public status server is up on " + publicAddr + " ~"))

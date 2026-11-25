@@ -39,8 +39,7 @@ func hostScriptFor(cfg config, serve string, id int) string {
 		baseURL = m[1]
 	}
 
-	// RCC's own hosting script loads places via the asset route, not the rbxclient /game/{id}
-	// route that Studio-based hosting uses
+	// RCC's own hosting script loads places via the asset route, not the rbxclient /game/{id} route that Studio-based hosting uses
 	mapLocation := fmt.Sprintf("http://%s/asset/?id=%d", baseURL, id)
 
 	switch {
@@ -50,8 +49,7 @@ func hostScriptFor(cfg config, serve string, id int) string {
 		mapLocation = cfg.MapLocation
 	}
 
-	// matches the serverpresence URL directly instead of assuming how the loadscript spells
-	// out its Visit:SetPing call
+	// matches the serverpresence URL directly instead of assuming how the loadscript spells out its Visit:SetPing call
 	var presenceLine string
 
 	if presenceURL := rePresenceURL.FindString(serve); presenceURL != "" {
@@ -94,8 +92,7 @@ func (o *orbiter) fetchServeScript(id int) ([]byte, error) {
 	return body, nil
 }
 
-// composeHostScript builds the inline, RCC-safe host script for a place. Most of its parameters
-// come from the Site's serve loadscript, which already has the right domain, map and authentication
+// composeHostScript builds the inline, RCC-safe host script for a place. Most of its parameters come from the Site's serve loadscript, which already has the right domain, map and authentication
 func (o *orbiter) composeHostScript(id int) (string, error) {
 	serve, err := o.fetchServeScript(id)
 	if err != nil {
