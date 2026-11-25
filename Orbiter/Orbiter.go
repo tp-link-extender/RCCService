@@ -225,7 +225,9 @@ var (
 func CheckServerUp(port int) bool {
 	// start a UDP server on the same port and see if it errors
 	// gee, I sure hope this never interferes with the actual server starting
-	conn, err := net.ListenUDP(proto, &net.UDPAddr{Port: port}) // gs-client communication only works on ipv4...
+	conn, err := net.ListenUDP(proto, &net.UDPAddr{
+		Port: port,
+	}) // gs-client communication only works on ipv4...
 	if err != nil {
 		return true
 	}
@@ -269,6 +271,19 @@ func (g *GameserverInfo) lastPushTime() time.Time {
 	return g.lastPush
 }
 
+// addServer registers a server and wakes everything waiting for one
+func (gs *Gameservers) addServer(id int, server *Gameserver) {
+	gs.serversMu.Lock()
+
+	defer gs.serversMu.Unlock()
+
+	gs.servers[id] = server
+
+	close(gs.serverAdded)
+
+	gs.serverAdded = make(chan struct{})
+}
+
 // deferStatus stores a push that arrived before its server was registered
 func (gs *Gameservers) deferStatus(id int, data []string) {
 	gs.pendingMu.Lock()
@@ -287,24 +302,9 @@ func (gs *Gameservers) server(id int) (*Gameserver, <-chan struct{}) {
 	return gs.servers[id], gs.serverAdded
 }
 
-// addServer registers a server and wakes everything waiting for one
-func (gs *Gameservers) addServer(id int, server *Gameserver) {
-	gs.serversMu.Lock()
-
-	defer gs.serversMu.Unlock()
-
-	gs.servers[id] = server
-
-	close(gs.serverAdded)
-
-	gs.serverAdded = make(chan struct{})
-}
-
 // waitForServer returns the server registered for id, waiting up to timeout for it to be added
 func (gs *Gameservers) waitForServer(id int, timeout time.Duration) *Gameserver {
-	deadline := time.After(timeout)
-
-	for {
+	for deadline := time.After(timeout); ; {
 		server, added := gs.server(id)
 		if server != nil {
 			return server
@@ -319,6 +319,9 @@ func (gs *Gameservers) waitForServer(id int, timeout time.Duration) *Gameserver 
 }
 
 func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
+	// Return events from statusChanged as SSE
+	const wait = 30 * time.Second
+
 	// don't check the IP, this route is public
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
@@ -329,9 +332,6 @@ func (gs *Gameservers) streamRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Log(fmt.Sprintf("[stream] %d request received", id))
-
-	// Return events from statusChanged as SSE
-	const wait = 30 * time.Second
 
 	server := gs.waitForServer(id, wait)
 	if server == nil {
@@ -533,7 +533,6 @@ func (gs *Gameservers) listRoute(w http.ResponseWriter, r *http.Request) {
 	for id, server := range gs.servers {
 		serverInfo = append(serverInfo, [2]any{id, &server.GameserverInfo})
 	}
-
 	gs.serversMu.Unlock()
 
 	// serverInfo = append(serverInfo, [2]any{-1, GameserverInfo{Pid: os.Getpid(), StartTime: time.Now().UnixMilli()}}) // test
@@ -612,50 +611,6 @@ func (gs *Gameservers) statusRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// siteURL is where the Site's rbxclient routes are, overridable with SITE_URL
-func siteURL() string {
-	if u := os.Getenv("SITE_URL"); u != "" {
-		return strings.TrimSuffix(u, "/")
-	}
-
-	return fmt.Sprintf("http://www.%s", os.Getenv("DOMAIN"))
-}
-
-// fetchServeScript gets a place's serve loadscript, which the Site only gives out with the gameserver key
-func fetchServeScript(id int) ([]byte, error) {
-	key := os.Getenv("GAMESERVER_KEY")
-	if key == "" {
-		return nil, errors.New("GAMESERVER_KEY is not set")
-	}
-
-	url := fmt.Sprintf("%s/game/%d/serve", siteURL(), id)
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build serve request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+key)
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch serve script: %w", err)
-	}
-
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read serve script: %w", err)
-	}
-
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch serve script: status %d: %s", res.StatusCode, string(body))
-	}
-
-	return body, nil
-}
-
 func idToPort(id int) int {
 	return 10000 + id%proxyOffset
 }
@@ -711,56 +666,6 @@ func TrackRCCJob(server *Gameserver, id int) {
 
 	Log(c.InRed(fmt.Sprintf("[track] %d rcc job - no engine activity (last push %s ago), terminating", id, time.Since(server.GameserverInfo.lastPushTime()).Round(time.Second))))
 	server.Stop()
-}
-
-// composeHostScript builds an inline, RCC-safe host script. Most parameters are taken
-// from the Site's serve loadscript, since it already has the right domain, map and
-// authentication info embedded
-func composeHostScript(id int) (string, error) {
-	serveScript, err := fetchServeScript(id)
-	if err != nil {
-		return "", err
-	}
-
-	s := string(serveScript)
-	baseURL := os.Getenv("DOMAIN")
-
-	if resBaseURL := reBaseURL.FindStringSubmatch(s); resBaseURL != nil {
-		baseURL = resBaseURL[1]
-	}
-
-	mapLocation, overridden := os.LookupEnv("RCC_MAP_LOCATION")
-	if overridden && mapLocation == "none" { // "none" skips map loading (tests)
-		mapLocation = ""
-	} else if overridden && mapLocation != "none" {
-		// explicit override, used verbatim
-	} else {
-		// RCC's own hosting script (gameserver.txt) loads places via the asset route,
-		// not the rbxclient /game/{id} route (which is what Studio-based hosting uses)
-		mapLocation = fmt.Sprintf("http://%s/asset/?id=%d", baseURL, id)
-	}
-
-	var presenceLine string
-
-	if resPresenceURL := rePresenceURL.FindStringSubmatch(s); resPresenceURL != nil {
-		// matches the serverpresence URL directly instead of assuming how the
-		// loadscript spells out its Visit:SetPing call
-		presenceLine = fmt.Sprintf("pcall(function() Visit:SetPing(%q, 30) end)", resPresenceURL[0])
-	}
-
-	script := strings.ReplaceAll(rccHostScript, "_BASE_URL", baseURL)
-	script = strings.ReplaceAll(script, "_PLACE_ID", strconv.Itoa(id))
-	script = strings.ReplaceAll(script, "_MAP_LOCATION", strconv.Quote(mapLocation))
-	script = strings.ReplaceAll(script, "_SERVER_PORT", strconv.Itoa(idToPort(id)))
-	script = strings.ReplaceAll(script, "_PRESENCE_PING", presenceLine)
-	// the hosted server reports "Ready" directly to the proxy's hostping route as soon
-	// as NetworkServer:Start succeeds - much more reliable than the port probe
-	hostingURL := strings.TrimSuffix(os.Getenv("PROXY_URL"), "/")
-	script = strings.ReplaceAll(script, "_HOSTPING_URL", fmt.Sprintf("%s/hostping/%d", hostingURL, id))
-
-	Log(c.InBlue(fmt.Sprintf("[compose] %d - host script ready (%d chars): base=%q map=%q port=%d presence=%v", id, len(script), baseURL, mapLocation, idToPort(id), presenceLine != "")))
-
-	return script, nil
 }
 
 func proxyToClient(p *Proxy, sessKey string, sess *Session) {
@@ -821,6 +726,7 @@ func runProxyOnPort(p *Proxy) {
 
 	defer close(done)
 	defer ticker.Stop()
+
 	go func() {
 		for {
 			select {
@@ -832,7 +738,6 @@ func runProxyOnPort(p *Proxy) {
 			cutoff := time.Now().Add(-idleTimeout).UnixNano()
 
 			mu.Lock()
-
 			for k, s := range sessions {
 				if s.last.Load() >= cutoff {
 					continue
@@ -842,7 +747,6 @@ func runProxyOnPort(p *Proxy) {
 				s.gs.Close()
 				delete(sessions, k)
 			}
-
 			mu.Unlock()
 		}
 	}()
@@ -919,13 +823,11 @@ func runProxyOnPort(p *Proxy) {
 
 	// cleanup any remaining sessions (e.g. when listener is closed)
 	mu.Lock()
-
 	for k, s := range sessions {
 		Log(c.InYellow(fmt.Sprintf("[proxy:%d] closing session %s", p.Port, k)))
 		s.gs.Close()
 		delete(sessions, k)
 	}
-
 	mu.Unlock()
 }
 
@@ -1118,6 +1020,100 @@ func LoadFromSetup() (string, error) {
 	Log(c.InGreen(fmt.Sprintf("Version %s already exists, skipping download", ver)))
 
 	return ver, nil
+}
+
+// siteURL is where the Site's rbxclient routes are, overridable with SITE_URL
+func siteURL() string {
+	if u := os.Getenv("SITE_URL"); u != "" {
+		return strings.TrimSuffix(u, "/")
+	}
+
+	return fmt.Sprintf("http://www.%s", os.Getenv("DOMAIN"))
+}
+
+// fetchServeScript gets a place's serve loadscript, which the Site only gives out with the gameserver key
+func fetchServeScript(id int) ([]byte, error) {
+	key := os.Getenv("GAMESERVER_KEY")
+	if key == "" {
+		return nil, errors.New("GAMESERVER_KEY is not set")
+	}
+
+	url := fmt.Sprintf("%s/game/%d/serve", siteURL(), id)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build serve request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch serve script: %w", err)
+	}
+
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read serve script: %w", err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch serve script: status %d: %s", res.StatusCode, string(body))
+	}
+
+	return body, nil
+}
+
+// composeHostScript builds an inline, RCC-safe host script. Most parameters are taken
+// from the Site's serve loadscript, since it already has the right domain, map and
+// authentication info embedded
+func composeHostScript(id int) (string, error) {
+	serveScript, err := fetchServeScript(id)
+	if err != nil {
+		return "", err
+	}
+
+	s := string(serveScript)
+	baseURL := os.Getenv("DOMAIN")
+
+	if resBaseURL := reBaseURL.FindStringSubmatch(s); resBaseURL != nil {
+		baseURL = resBaseURL[1]
+	}
+
+	mapLocation, overridden := os.LookupEnv("RCC_MAP_LOCATION")
+	if overridden && mapLocation == "none" { // "none" skips map loading (tests)
+		mapLocation = ""
+	} else if overridden && mapLocation != "none" {
+		// explicit override, used verbatim
+	} else {
+		// RCC's own hosting script (gameserver.txt) loads places via the asset route,
+		// not the rbxclient /game/{id} route (which is what Studio-based hosting uses)
+		mapLocation = fmt.Sprintf("http://%s/asset/?id=%d", baseURL, id)
+	}
+
+	var presenceLine string
+
+	if resPresenceURL := rePresenceURL.FindStringSubmatch(s); resPresenceURL != nil {
+		// matches the serverpresence URL directly instead of assuming how the
+		// loadscript spells out its Visit:SetPing call
+		presenceLine = fmt.Sprintf("pcall(function() Visit:SetPing(%q, 30) end)", resPresenceURL[0])
+	}
+
+	script := strings.ReplaceAll(rccHostScript, "_BASE_URL", baseURL)
+	script = strings.ReplaceAll(script, "_PLACE_ID", strconv.Itoa(id))
+	script = strings.ReplaceAll(script, "_MAP_LOCATION", strconv.Quote(mapLocation))
+	script = strings.ReplaceAll(script, "_SERVER_PORT", strconv.Itoa(idToPort(id)))
+	script = strings.ReplaceAll(script, "_PRESENCE_PING", presenceLine)
+	// the hosted server reports "Ready" directly to the proxy's hostping route as soon
+	// as NetworkServer:Start succeeds - much more reliable than the port probe
+	hostingURL := strings.TrimSuffix(os.Getenv("PROXY_URL"), "/")
+	script = strings.ReplaceAll(script, "_HOSTPING_URL", fmt.Sprintf("%s/hostping/%d", hostingURL, id))
+
+	Log(c.InBlue(fmt.Sprintf("[compose] %d - host script ready (%d chars): base=%q map=%q port=%d presence=%v", id, len(script), baseURL, mapLocation, idToPort(id), presenceLine != "")))
+
+	return script, nil
 }
 
 // startGameProxy is the per-game UDP relay shared by both hosting engines
@@ -1386,7 +1382,6 @@ func TrackNetwork(server *Gameserver, id int) {
 func (gs *Gameservers) Track(server *Gameserver, id int) {
 	gs.addServer(id, server)
 	gs.flushStatuses(id, server)
-
 	Log(fmt.Sprintf("[track] %d - tracking started", id))
 
 	go TrackNetwork(server, id)

@@ -151,44 +151,6 @@ func Logr(txt string) {
 	fmt.Print("\r", time.Now().Format("2006/01/02, 15:04:05  "), txt) // fmt.Print don't add spaces between args
 }
 
-// remoteIP is the address a request came from, without its port
-func remoteIP(r *http.Request) net.IP {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return nil
-	}
-
-	return net.ParseIP(host)
-}
-
-// fromLocal reports whether a request came from this machine, or also from the configured IP when withConfigured is set
-func fromLocal(r *http.Request, withConfigured bool) bool {
-	ip := remoteIP(r)
-	if ip == nil {
-		return false
-	}
-
-	if ip.IsLoopback() {
-		return true
-	}
-
-	configured := net.ParseIP(strings.Trim(os.Getenv("IP"), "[]"))
-
-	return withConfigured && configured != nil && configured.Equal(ip)
-}
-
-func checkAuth(r *http.Request) bool {
-	key := os.Getenv("PROXY_KEY")
-	if key == "" {
-		// backwards compat: fall back to the render route's IP whitelisting
-		return fromLocal(r, true)
-	}
-
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-
-	return ok && subtle.ConstantTimeCompare([]byte(token), []byte(key)) == 1
-}
-
 // findPid looks up the pid of the RCCService process running a -Console <port>
 func findPid(port int) (int, error) {
 	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "Name='RCCService.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match [regex]::Escape('-Console `+strconv.Itoa(port)+`') }).ProcessId`).Output()
@@ -197,6 +159,13 @@ func findPid(port int) (int, error) {
 	}
 
 	return strconv.Atoi(strings.TrimSpace(string(out)))
+}
+
+// stopRenewing ends a job's lease renewal. Crash cleanup, closing and failed submits can race to do this, and closing the channel twice would panic
+func (j *job) stopRenewing() {
+	j.stopOnce.Do(func() {
+		close(j.stopRenew)
+	})
 }
 
 func newRCCInstance(port int, kind string) *rccInstance {
@@ -267,11 +236,33 @@ func (p *pool) freeRenderSlot(id string) {
 	p.deleteJob(id)
 }
 
-// stopRenewing ends a job's lease renewal. Crash cleanup, closing and failed submits can race to do this, and closing the channel twice would panic
-func (j *job) stopRenewing() {
-	j.stopOnce.Do(func() {
-		close(j.stopRenew)
-	})
+// pickInstance grabs the same-kind instance with the fewest active jobs;
+// ok = one was found. Render and host instances never share jobs
+func (p *pool) pickInstance(kind string) (instance *rccInstance, ok bool) {
+	p.mu.Lock()
+
+	defer p.mu.Unlock()
+
+	fewest := p.maxJobs
+
+	for _, ins := range p.instances {
+		if ins.kind != kind {
+			continue
+		}
+
+		ins.mu.Lock()
+
+		alive := ins.alive
+		n := len(ins.jobs)
+
+		ins.mu.Unlock()
+
+		if alive && n < fewest {
+			instance, fewest = ins, n
+		}
+	}
+
+	return instance, instance != nil
 }
 
 // renewLoop keeps a hosting job's lease renewed while the pool holds it
@@ -343,35 +334,6 @@ func (i *rccInstance) countJobs() int {
 	defer i.mu.Unlock()
 
 	return len(i.jobs)
-}
-
-// pickInstance grabs the same-kind instance with the fewest active jobs;
-// ok = one was found. Render and host instances never share jobs
-func (p *pool) pickInstance(kind string) (instance *rccInstance, ok bool) {
-	p.mu.Lock()
-
-	defer p.mu.Unlock()
-
-	fewest := p.maxJobs
-
-	for _, ins := range p.instances {
-		if ins.kind != kind {
-			continue
-		}
-
-		ins.mu.Lock()
-
-		alive := ins.alive
-		n := len(ins.jobs)
-
-		ins.mu.Unlock()
-
-		if alive && n < fewest {
-			instance, fewest = ins, n
-		}
-	}
-
-	return instance, instance != nil
 }
 
 // kill stops an instance: alive=false, then removes the process itself
@@ -459,23 +421,6 @@ func (p *pool) CloseJob(id string) {
 	})
 }
 
-// closeHostRoute stops lease renewal and tells RCC to close a hosted job
-func closeHostRoute(w http.ResponseWriter, r *http.Request) {
-	Log(c.InBlue("Received host close request"))
-
-	if !checkAuth(r) {
-		Log(c.InRed("Request to close route is not authenticated!"))
-		w.WriteHeader(http.StatusForbidden)
-
-		return
-	}
-
-	id := r.PathValue("id")
-
-	jobPool.CloseJob(id)
-	Log(c.InYellow("Host job " + id + " closed"))
-}
-
 func readPingBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	readBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxPingBytes))
 	if err != nil {
@@ -503,6 +448,61 @@ func readPingBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	}
 
 	return readBody, nil
+}
+
+// remoteIP is the address a request came from, without its port
+func remoteIP(r *http.Request) net.IP {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return nil
+	}
+
+	return net.ParseIP(host)
+}
+
+// fromLocal reports whether a request came from this machine, or also from the configured IP when withConfigured is set
+func fromLocal(r *http.Request, withConfigured bool) bool {
+	ip := remoteIP(r)
+	if ip == nil {
+		return false
+	}
+
+	if ip.IsLoopback() {
+		return true
+	}
+
+	configured := net.ParseIP(strings.Trim(os.Getenv("IP"), "[]"))
+
+	return withConfigured && configured != nil && configured.Equal(ip)
+}
+
+func checkAuth(r *http.Request) bool {
+	key := os.Getenv("PROXY_KEY")
+	if key == "" {
+		// backwards compat: fall back to the render route's IP whitelisting
+		return fromLocal(r, true)
+	}
+
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+
+	return ok && subtle.ConstantTimeCompare([]byte(token), []byte(key)) == 1
+}
+
+// closeHostRoute stops lease renewal and tells RCC to close a hosted job
+func closeHostRoute(w http.ResponseWriter, r *http.Request) {
+	Log(c.InBlue("Received host close request"))
+
+	if !checkAuth(r) {
+		Log(c.InRed("Request to close route is not authenticated!"))
+		w.WriteHeader(http.StatusForbidden)
+
+		return
+	}
+
+	id := r.PathValue("id")
+
+	jobPool.CloseJob(id)
+	Log(c.InYellow("Host job " + id + " closed"))
 }
 
 // hostping callback comes from hosted gameservers, padded by the proxy's host epilogue.
@@ -811,7 +811,6 @@ func (i *rccInstance) run() {
 
 		for _, j := range lost {
 			jobPool.deleteJob(j.id)
-
 			j.stopRenewing()
 		}
 
@@ -1020,6 +1019,7 @@ func hostRoute(w http.ResponseWriter, r *http.Request) {
 // ID route starts a render, coming from the Site
 func idRoute(w http.ResponseWriter, r *http.Request) {
 	Log(c.InBlue("Received render request"))
+
 	if !fromLocal(r, true) {
 		Log(c.InRed("IP " + r.RemoteAddr + " is not allowed! (render)"))
 		w.WriteHeader(http.StatusForbidden)
